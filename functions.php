@@ -136,7 +136,7 @@ function a1geo_render_page_meta_description( $post ) {
     wp_nonce_field( 'a1geo_save_page_meta_description', 'a1geo_page_meta_description_nonce' );
     $description = get_post_meta( $post->ID, '_a1geo_meta_description', true );
     ?>
-    <textarea name="a1geo_meta_description" id="a1geo-meta-description" rows="3" class="widefat" maxlength="1000"><?php echo esc_textarea( $description ); ?></textarea>
+    <textarea name="a1geo_meta_description" id="a1geo-meta-description" rows="3" class="widefat" maxlength="1200"><?php echo esc_textarea( $description ); ?></textarea>
     <p class="description"><?php esc_html_e( 'Search-result description for this page. Leave blank to let Yoast generate one.', 'electro-custom' ); ?></p>
     <?php
 }
@@ -150,7 +150,7 @@ function a1geo_save_page_meta_description( $post_id ) {
     }
 
     $description = isset( $_POST['a1geo_meta_description'] ) ? sanitize_textarea_field( wp_unslash( $_POST['a1geo_meta_description'] ) ) : '';
-    $description = function_exists( 'mb_substr' ) ? mb_substr( $description, 0, 1000 ) : substr( $description, 0, 1000 );
+    $description = function_exists( 'mb_substr' ) ? mb_substr( $description, 0, 1200 ) : substr( $description, 0, 1200 );
     if ( '' === $description ) {
         delete_post_meta( $post_id, '_a1geo_meta_description' );
     } else {
