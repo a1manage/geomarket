@@ -1,0 +1,66 @@
+@charset "UTF-8";
+/*
+Theme Name:         Electro Custom
+Template: electro
+*/
+.page .entry-title {
+  display: none;
+}
+
+.header-icon .ec-compare {
+	display:none;
+}
+
+.header-icon .ec-favorites {
+	display:none;
+}
+
+.header-icon__cart {
+	display:none;
+}
+
+.page-template-template-page-centered-fullwidth-product-table .content-area {
+	flex: 0 0 auto;
+  width: 100%;
+}
+
+/*
+Hide the Breadcrumb navigation on Dokan Dashboard page 
+*/
+.dokan-dashboard nav.woocommerce-breadcrumb  {
+  display:none;
+}
+
+.product-edit-container .dokan-product-short-description-alert {
+    color: #f05025;
+    font-style: italic;
+    margin-top: 5px;
+}
+
+#post_excerpt-tmce {	
+	border-radius: 0;
+	background: #f6f7f7;
+    color: #50575e; 
+	border: 1px solid #dcdcde;
+}
+
+#post_excerpt-html {	
+	border-radius: 0;
+	background: #f6f7f7;
+    color: #50575e; 
+	border: 1px solid #dcdcde;
+}
+
+#post_excerpt-tmce[aria-pressed="true"]{	
+	border-radius: 0;
+	background: #f6f7f7;
+    color: #50575e;
+    border-bottom-color: #f6f7f7;
+}
+
+#post_excerpt-html[aria-pressed="true"]{	
+	border-radius: 0;
+	background: #f6f7f7;
+    color: #50575e;
+    border-bottom-color: #f6f7f7;
+}
