@@ -78,6 +78,15 @@ function a1geo_add_product_table_page_meta_boxes( $post ) {
             'normal',
             'high'
         );
+
+        add_meta_box(
+            'a1geo-page-sub-header',
+            __( 'Sub Header (H2)', 'electro-custom' ),
+            'a1geo_render_page_sub_header',
+            'page',
+            'normal',
+            'high'
+        );
     }
 
     add_meta_box(
@@ -105,38 +114,38 @@ function a1geo_render_page_excerpt( $post ) {
     );
 }
 
-function a1geo_refresh_page_excerpt_editor_on_toggle() {
-    $screen = get_current_screen();
-    $post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
-    if ( ! $screen || 'page' !== $screen->post_type || ! $post_id || ! a1geo_is_product_table_page( $post_id ) ) {
-        return;
-    }
+function a1geo_render_page_sub_header( $post ) {
+    wp_nonce_field( 'a1geo_save_page_sub_header', 'a1geo_page_sub_header_nonce' );
+    $sub_header = get_post_meta( $post->ID, '_a1geo_subtitle', true );
     ?>
-    <script>
-    jQuery(function ($) {
-        $(document).on('postbox-toggled', function (event, postbox) {
-            if (!postbox || postbox.attr('id') !== 'a1geo-page-excerpt') {
-                return;
-            }
-
-            window.setTimeout(function () {
-                var editor = window.tinymce && window.tinymce.get('a1geo-page-excerpt-editor');
-                if (editor && !editor.isHidden()) {
-                    editor.execCommand('mceRepaint');
-                }
-            }, 100);
-        });
-    });
-    </script>
+    <input type="text" name="a1geo_sub_header" id="a1geo-sub-header" class="widefat" maxlength="300" value="<?php echo esc_attr( $sub_header ); ?>" />
+    <p class="description"><?php esc_html_e( 'Shown as an H2 under the page title. Leave blank to hide it.', 'electro-custom' ); ?></p>
     <?php
 }
-add_action( 'admin_footer-post.php', 'a1geo_refresh_page_excerpt_editor_on_toggle' );
+
+function a1geo_save_page_sub_header( $post_id ) {
+    if ( ! isset( $_POST['a1geo_page_sub_header_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['a1geo_page_sub_header_nonce'] ) ), 'a1geo_save_page_sub_header' ) ) {
+        return;
+    }
+    if ( ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) || wp_is_post_revision( $post_id ) || ! current_user_can( 'edit_page', $post_id ) ) {
+        return;
+    }
+
+    $sub_header = isset( $_POST['a1geo_sub_header'] ) ? sanitize_text_field( wp_unslash( $_POST['a1geo_sub_header'] ) ) : '';
+    $sub_header = function_exists( 'mb_substr' ) ? mb_substr( $sub_header, 0, 300 ) : substr( $sub_header, 0, 300 );
+    if ( '' === $sub_header ) {
+        delete_post_meta( $post_id, '_a1geo_subtitle' );
+    } else {
+        update_post_meta( $post_id, '_a1geo_subtitle', $sub_header );
+    }
+}
+add_action( 'save_post_page', 'a1geo_save_page_sub_header' );
 
 function a1geo_render_page_meta_description( $post ) {
     wp_nonce_field( 'a1geo_save_page_meta_description', 'a1geo_page_meta_description_nonce' );
     $description = get_post_meta( $post->ID, '_a1geo_meta_description', true );
     ?>
-    <textarea name="a1geo_meta_description" id="a1geo-meta-description" rows="3" class="widefat" maxlength="1200"><?php echo esc_textarea( $description ); ?></textarea>
+    <textarea name="a1geo_meta_description" id="a1geo-meta-description" rows="3" class="widefat" maxlength="2000"><?php echo esc_textarea( $description ); ?></textarea>
     <p class="description"><?php esc_html_e( 'Search-result description for this page. Leave blank to let Yoast generate one.', 'electro-custom' ); ?></p>
     <?php
 }
@@ -150,7 +159,7 @@ function a1geo_save_page_meta_description( $post_id ) {
     }
 
     $description = isset( $_POST['a1geo_meta_description'] ) ? sanitize_textarea_field( wp_unslash( $_POST['a1geo_meta_description'] ) ) : '';
-    $description = function_exists( 'mb_substr' ) ? mb_substr( $description, 0, 1200 ) : substr( $description, 0, 1200 );
+    $description = function_exists( 'mb_substr' ) ? mb_substr( $description, 0, 2000 ) : substr( $description, 0, 2000 );
     if ( '' === $description ) {
         delete_post_meta( $post_id, '_a1geo_meta_description' );
     } else {
@@ -159,9 +168,21 @@ function a1geo_save_page_meta_description( $post_id ) {
 }
 add_action( 'save_post_page', 'a1geo_save_page_meta_description' );
 
-function a1geo_filter_page_meta_description( $description ) {
+function a1geo_get_meta_description_page_id() {
     $post_id = get_queried_object_id();
-    if ( $post_id && 'page' === get_post_type( $post_id ) ) {
+
+    if ( is_front_page() && 'page' === get_option( 'show_on_front' ) ) {
+        $post_id = (int) get_option( 'page_on_front' );
+    } elseif ( is_front_page() && is_page_template( 'template-homepage-a1geo.php' ) ) {
+        $post_id = get_queried_object_id();
+    }
+
+    return $post_id && 'page' === get_post_type( $post_id ) ? $post_id : 0;
+}
+
+function a1geo_filter_page_meta_description( $description ) {
+    $post_id = a1geo_get_meta_description_page_id();
+    if ( $post_id ) {
         $custom_description = get_post_meta( $post_id, '_a1geo_meta_description', true );
         if ( '' !== $custom_description ) {
             return '';
@@ -173,8 +194,8 @@ function a1geo_filter_page_meta_description( $description ) {
 add_filter( 'wpseo_metadesc', 'a1geo_filter_page_meta_description' );
 
 function a1geo_output_page_meta_description() {
-    $post_id = get_queried_object_id();
-    if ( ! $post_id || 'page' !== get_post_type( $post_id ) ) {
+    $post_id = a1geo_get_meta_description_page_id();
+    if ( ! $post_id ) {
         return;
     }
 
@@ -186,8 +207,8 @@ function a1geo_output_page_meta_description() {
 add_action( 'wp_head', 'a1geo_output_page_meta_description', 2 );
 
 function a1geo_filter_mtm_page_meta_description( $meta_tags ) {
-    $post_id = get_queried_object_id();
-    if ( ! $post_id || 'page' !== get_post_type( $post_id ) || '' === get_post_meta( $post_id, '_a1geo_meta_description', true ) ) {
+    $post_id = a1geo_get_meta_description_page_id();
+    if ( ! $post_id || '' === get_post_meta( $post_id, '_a1geo_meta_description', true ) ) {
         return $meta_tags;
     }
 

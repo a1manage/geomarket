@@ -84,6 +84,10 @@ electro_get_header( $header_style ); ?>
 			
 		?>
 			<h1 class="custom-page-title"><?php the_title() ?></h1>
+			<?php $a1geo_sub_header = get_post_meta( get_the_ID(), '_a1geo_subtitle', true ); ?>
+			<?php if ( '' !== $a1geo_sub_header ) : ?>
+				<h2 class="custom-page-sub-header"><?php echo esc_html( $a1geo_sub_header ); ?></h2>
+			<?php endif; ?>
 			<div class="mobile-instruction-text" style="width:100%;float:right;color: red;"><span><b>For a better view, please rotate your phone to landscape mode.</b></span></div>			
 			<!--<div style="width:100%;float:right"><span><b>Click a seller’s logo in the upper-left corner of each product list below to visit the seller’s website.</b></span></div>-->
 		<?php get_template_part( 'templates/contents/content', 'page' ); ?>

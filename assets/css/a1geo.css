@@ -229,6 +229,13 @@ h1.custom-page-title {
    margin-top:1rem;
 }
 
+h2.custom-page-sub-header {
+   font-size: 1.25rem;
+   font-weight: 400;
+   color: #555555;
+   margin: 0.5rem 0 1rem;
+}
+
 .wpdt-c .wpDataTablesWrapper .dataTables_length .bootstrap-select.length_menu {
    color:#824a25;
 }
