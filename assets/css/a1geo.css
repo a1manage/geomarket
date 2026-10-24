@@ -199,7 +199,12 @@ pre.short-description ol li{
 }
 
 .wpDataTablesWrapper {
-   margin-bottom: -25px !important;
+   margin-bottom: 1.5rem !important;
+}
+
+.product-category-description {
+   clear: both;
+   margin-top: 1.5rem;
 }
 
 table[class*='wpDataTableID-'] tbody tr td:hover span.description-comment {
@@ -230,6 +235,13 @@ h1.custom-page-title {
 }
 
 h2.custom-page-sub-header {
+   font-size: 1.25rem;
+   font-weight: 400;
+   color: #555555;
+   margin: 0.5rem 0 1rem;
+}
+
+h2.product-category-sub-header {
    font-size: 1.25rem;
    font-weight: 400;
    color: #555555;

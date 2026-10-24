@@ -28,6 +28,8 @@ electro_get_header( $header_style ); ?>
 
 			do_action( 'electro_page_before' );
 
+			$page_description = a1geo_get_page_description( get_queried_object_id() );
+
 			//get_template_part( 'templates/contents/content', 'page' );
 			// ZZZZZ
 			get_template_part( 'templates/contents/content', 'page' );
@@ -54,11 +56,11 @@ electro_get_header( $header_style ); ?>
 							<b>For a better view, please rotate your phone to landscape mode.</b>
 						</span>
 					</p>		
-					<p><span style="font-size: 19px;">
-						<b>We list geophysical instruments and services from around the world to help buyers quickly find what they need.</b><br/>
-						</span></p>	
-					<p style="font-size: 19px;"><b>Simply search "<span style="color:red;">Geo</span><span style="color:blue;">Market</span>" to find us</b></p>		
-					<p><span style="font-size: 19px;"><b>Find the geophysical instruments or services you need in the categories below.</b></span></p>						
+					<?php if ( '' !== trim( wp_strip_all_tags( $page_description ) ) ) : ?>
+						<div class="custom-page-description">
+							<?php echo wp_kses_post( $page_description ); ?>
+						</div>
+					<?php endif; ?>
 				</div>
 			</div>	
 			

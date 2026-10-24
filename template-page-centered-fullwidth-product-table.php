@@ -81,19 +81,38 @@ electro_get_header( $header_style ); ?>
 
 		<?php 
 			do_action( 'electro_page_before' );
+			$page_id = get_the_ID();
+			$sub_header = get_post_meta( $page_id, '_a1geo_subtitle', true );
+			$show_template_check = isset( $_GET['a1geo_template_check'] )
+				&& '1' === sanitize_text_field( wp_unslash( $_GET['a1geo_template_check'] ) )
+				&& current_user_can( 'manage_options' );
+			$page_description = get_post_meta( $page_id, '_a1geo_page_description', true );
+			$page_meta_description = get_post_meta( $page_id, '_a1geo_meta_description', true );
 			
 		?>
 			<h1 class="custom-page-title"><?php the_title() ?></h1>
-			<?php $a1geo_sub_header = get_post_meta( get_the_ID(), '_a1geo_subtitle', true ); ?>
-			<?php if ( '' !== $a1geo_sub_header ) : ?>
-				<h2 class="custom-page-sub-header"><?php echo esc_html( $a1geo_sub_header ); ?></h2>
+			<?php if ( '' !== $sub_header ) : ?>
+				<h2 class="custom-page-sub-header"><?php echo esc_html( $sub_header ); ?></h2>
+			<?php endif; ?>
+			<?php if ( $show_template_check ) : ?>
+				<aside class="a1geo-template-check" style="padding:12px; margin:12px 0; border:1px solid #777; background:#fff; color:#222;">
+					<strong>Template data check</strong>
+					<ul>
+						<li>Page ID: <?php echo esc_html( (string) $page_id ); ?></li>
+						<li>Template: <?php echo esc_html( get_page_template_slug( $page_id ) ); ?></li>
+						<li>Page description characters: <?php echo esc_html( (string) ( function_exists( 'mb_strlen' ) ? mb_strlen( $page_description ) : strlen( $page_description ) ) ); ?></li>
+						<li>Page description render condition: <?php echo '' !== trim( wp_strip_all_tags( $page_description ) ) ? 'PASS' : 'FAIL'; ?></li>
+						<li>H2 metadata: <?php echo '' !== $sub_header ? 'present' : 'empty'; ?></li>
+						<li>Meta description metadata: <?php echo '' !== $page_meta_description ? 'present' : 'empty'; ?></li>
+					</ul>
+				</aside>
 			<?php endif; ?>
 			<div class="mobile-instruction-text" style="width:100%;float:right;color: red;"><span><b>For a better view, please rotate your phone to landscape mode.</b></span></div>			
 			<!--<div style="width:100%;float:right"><span><b>Click a seller’s logo in the upper-left corner of each product list below to visit the seller’s website.</b></span></div>-->
 		<?php get_template_part( 'templates/contents/content', 'page' ); ?>
-			<?php if ( has_excerpt() ) : ?>
+			<?php if ( '' !== trim( wp_strip_all_tags( $page_description ) ) ) : ?>
 				<div class="custom-page-description">
-					<?php echo wp_kses_post( wpautop( get_the_excerpt() ) ); ?>
+					<?php echo wp_kses_post( $page_description ); ?>
 				</div>
 			<?php endif; ?>
 		<?php	

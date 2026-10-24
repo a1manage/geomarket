@@ -48,37 +48,47 @@ add_action( 'wp_enqueue_scripts', function () {
     }
 }, 999 );
 
-add_action( 'init', function () {
-    add_post_type_support( 'page', 'excerpt' );
-} );
-
 function a1geo_is_product_table_page( $post_id ) {
     return 'template-page-centered-fullwidth-product-table.php' === get_page_template_slug( $post_id );
 }
 
-function a1geo_configure_product_table_page_excerpt_editor() {
-    if ( ! is_admin() || empty( $_GET['post'] ) ) {
-        return;
+function a1geo_is_page_description_page( $post_id ) {
+    return in_array(
+        get_page_template_slug( $post_id ),
+        array( 'template-page-centered-fullwidth-product-table.php', 'template-homepage-a1geo.php' ),
+        true
+    );
+}
+
+function a1geo_get_page_description( $post_id ) {
+    $description = get_post_meta( $post_id, '_a1geo_page_description', true );
+
+    if ( '' !== trim( wp_strip_all_tags( $description ) ) ) {
+        return $description;
     }
 
-    $post_id = absint( $_GET['post'] );
-    if ( 'page' === get_post_type( $post_id ) && a1geo_is_product_table_page( $post_id ) ) {
-        remove_post_type_support( 'page', 'excerpt' );
+    if ( 'template-homepage-a1geo.php' === get_page_template_slug( $post_id ) ) {
+        return '<p style="font-size: 19px;"><b>We list geophysical instruments and services from around the world to help buyers quickly find what they need.</b></p>'
+            . '<p style="font-size: 19px;"><b>Simply search "<span style="color:red;">Geo</span><span style="color:blue;">Market</span>" to find us</b></p>'
+            . '<p style="font-size: 19px;"><b>Find the geophysical instruments or services you need in the categories below.</b></p>';
     }
+
+    return $description;
 }
-add_action( 'init', 'a1geo_configure_product_table_page_excerpt_editor', 100 );
 
 function a1geo_add_product_table_page_meta_boxes( $post ) {
-    if ( a1geo_is_product_table_page( $post->ID ) ) {
+    if ( a1geo_is_page_description_page( $post->ID ) ) {
         add_meta_box(
-            'a1geo-page-excerpt',
-            __( 'Edit Description', 'electro-custom' ),
-            'a1geo_render_page_excerpt',
+            'a1geo-page-description',
+            __( 'Page Description', 'electro-custom' ),
+            'a1geo_render_page_description',
             'page',
             'normal',
             'high'
         );
+    }
 
+    if ( a1geo_is_product_table_page( $post->ID ) ) {
         add_meta_box(
             'a1geo-page-sub-header',
             __( 'Sub Header (H2)', 'electro-custom' ),
@@ -100,12 +110,15 @@ function a1geo_add_product_table_page_meta_boxes( $post ) {
 }
 add_action( 'add_meta_boxes_page', 'a1geo_add_product_table_page_meta_boxes' );
 
-function a1geo_render_page_excerpt( $post ) {
+function a1geo_render_page_description( $post ) {
+    wp_nonce_field( 'a1geo_save_page_description', 'a1geo_page_description_nonce' );
+    $description = a1geo_get_page_description( $post->ID );
+
     wp_editor(
-        $post->post_excerpt,
-        'a1geo-page-excerpt-editor',
+        $description,
+        'a1geo-page-description-editor',
         array(
-            'textarea_name' => 'excerpt',
+            'textarea_name' => 'a1geo_page_description',
             'textarea_rows' => 8,
             'media_buttons' => false,
             'teeny' => false,
@@ -113,6 +126,23 @@ function a1geo_render_page_excerpt( $post ) {
         )
     );
 }
+
+function a1geo_save_page_description( $post_id ) {
+    if ( ! isset( $_POST['a1geo_page_description_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['a1geo_page_description_nonce'] ) ), 'a1geo_save_page_description' ) ) {
+        return;
+    }
+    if ( ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) || wp_is_post_revision( $post_id ) || ! current_user_can( 'edit_page', $post_id ) || ! a1geo_is_page_description_page( $post_id ) ) {
+        return;
+    }
+
+    $description = isset( $_POST['a1geo_page_description'] ) ? wp_kses_post( wp_unslash( $_POST['a1geo_page_description'] ) ) : '';
+    if ( '' === trim( wp_strip_all_tags( $description ) ) ) {
+        delete_post_meta( $post_id, '_a1geo_page_description' );
+    } else {
+        update_post_meta( $post_id, '_a1geo_page_description', $description );
+    }
+}
+add_action( 'save_post_page', 'a1geo_save_page_description' );
 
 function a1geo_render_page_sub_header( $post ) {
     wp_nonce_field( 'a1geo_save_page_sub_header', 'a1geo_page_sub_header_nonce' );
@@ -140,6 +170,43 @@ function a1geo_save_page_sub_header( $post_id ) {
     }
 }
 add_action( 'save_post_page', 'a1geo_save_page_sub_header' );
+
+function a1geo_render_product_category_sub_header() {
+    if ( ! is_product_taxonomy() ) {
+        return;
+    }
+
+    $term = get_queried_object();
+    if ( ! $term instanceof WP_Term || 'product_cat' !== $term->taxonomy ) {
+        return;
+    }
+
+    $sub_header = get_term_meta( $term->term_id, '_a1geo_subtitle', true );
+    if ( '' !== $sub_header ) {
+        printf( '<h2 class="product-category-sub-header">%s</h2>', esc_html( $sub_header ) );
+    }
+}
+
+function a1geo_render_product_category_description() {
+    if ( ! is_product_taxonomy() ) {
+        return;
+    }
+
+    $term = get_queried_object();
+    if ( ! $term instanceof WP_Term || 'product_cat' !== $term->taxonomy ) {
+        return;
+    }
+
+    if ( '' !== trim( $term->description ) ) {
+        printf(
+            '<div class="term-description">%s</div>',
+            wc_format_content( wp_kses_post( $term->description ) )
+        );
+    }
+}
+remove_action( 'woocommerce_archive_description', 'woocommerce_taxonomy_archive_description', 10 );
+add_action( 'woocommerce_before_shop_loop', 'a1geo_render_product_category_sub_header', 10 );
+add_action( 'woocommerce_after_main_content', 'a1geo_render_product_category_description', 9 );
 
 function a1geo_render_page_meta_description( $post ) {
     wp_nonce_field( 'a1geo_save_page_meta_description', 'a1geo_page_meta_description_nonce' );
