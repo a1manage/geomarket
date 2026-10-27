@@ -69,8 +69,8 @@ function a1geo_get_page_description( $post_id ) {
 
     if ( 'template-homepage-a1geo.php' === get_page_template_slug( $post_id ) ) {
         return '<p style="font-size: 19px;"><b>We list geophysical instruments and services from around the world to help buyers quickly find what they need.</b></p>'
-            . '<p style="font-size: 19px;"><b>Simply search "<span style="color:red;">Geo</span><span style="color:blue;">Market</span>" to find us</b></p>'
-            . '<p style="font-size: 19px;"><b>Find the geophysical instruments or services you need in the categories below.</b></p>';
+            . '<p style="font-size: 19px;">We classify all items into four main categories: <b>Geophysical Instruments</b>, <b>Geophysical Survey Services</b>, <b>Geophysical Applications</b>, and <b>Others</b>. All of these encompass standard geophysical'
+            . 'techniques, including seismic method, resistivity method, TEM method, EM method, magnetic method, radiometric method, GPR method, airborne geophysical method, and well logging method.</p>';
     }
 
     return $description;

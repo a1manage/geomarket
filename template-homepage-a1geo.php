@@ -218,9 +218,26 @@ electro_get_header( $header_style ); ?>
 					</div>
 				</div>
 			</div>
-			<div class="row" style="margin-top:10px;">				
-				<div class="col col-12 col-sm-12 col-md-12 col-lg-12 col-xl-12 d-flex flex-column">					
-					<p><span style="font-size: 14px;">If you notice any inaccurate or unlawful information on this website, please use the “Feedback” link at the top of the page to report it. We will review and correct the issue promptly. <br/></span></p>					
+			
+			<div class="row" style="margin-top:10px;">
+				<div class="col col-12 col-sm-12 col-md-12 col-lg-12 col-xl-12 d-flex flex-column">
+					<h3>Geophysical Instruments</h3>
+					<p>Encompasses hardware and devices across various methods, including seismic instruments, resistivity/IP instruments, TEM instruments, EM instruments, magnetometers, radiometric equipment, GPR units, airborne geophysical systems, and well logging tools.</p>
+
+					<h3>Geophysical Survey Services</h3>
+					<p>Covers field acquisition and technical consulting across all methodologies, including seismic, resistivity/IP, TEM, EM, magnetic, radiometric, GPR, airborne, and well logging services, as well as associated geophysical data processing and interpretation.</p>
+
+					<h3>Geophysical Applications</h3>
+					<p>Outlines the geological and engineering problems addressed using geophysical techniques. Applications include groundwater exploration, civil engineering geology, mineral exploration, archaeological investigations, environmental and landfill site investigations, geohazard assessments, geological and infrastructure mapping, oil and gas exploration, thermal and geothermal surveys, structural and dam monitoring, and geophysical education and training.</p>
+
+					<h3>Others</h3>
+					<p>Covers geophysical products and services beyond the core categories, including geophysical software, instrument rentals, secondhand or used equipment, geophysical cables, geophones, seismic energy sources, winches, and auxiliary field accessories.</p>
+				</div>
+			</div>
+			<div class="row" style="margin-top:10px;">
+				<div class="col col-12 col-sm-12 col-md-12 col-lg-12 col-xl-12 d-flex flex-column">
+					<p><span style="font-size: 14px;">If you notice any inaccurate or unlawful information on this website, please use the “Feedback” link at the top of the page to report it. We will review and correct the issue promptly. <br/></span></p>
+					
 				</div>
 			</div>				
 		<?php	
