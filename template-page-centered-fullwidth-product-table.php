@@ -43,23 +43,6 @@ add_action( 'wp_head', function() {
 	<meta property="og:image" content="<?php echo $image_url; ?>" />
 	<meta property="og:image:secure_url" content="<?php echo $image_url; ?>" />
     <?php endif; ?>
-
-    <!-- Structured Data Schema -->
-    <?php if ( $image_url ) : ?>
-	<script type="application/ld+json">
-	{
-		"@context": "https://schema.org",
-		"@type": "CollectionPage",
-		"name": "<?php echo $page_title; ?>",
-		"url": "<?php echo $page_url; ?>",
-		"image": "<?php echo $image_url; ?>",
-		"primaryImageOfPage": {
-			"@type": "ImageObject",
-			"url": "<?php echo $image_url; ?>"
-		}
-	}
-	</script>
-    <?php endif; ?>
     <?php
 }, 1 );
 

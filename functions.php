@@ -1581,14 +1581,20 @@ function add_custom_json_ld_schema() {
         
         $page_title = get_the_title();
         
-        // Check if a custom hand-written excerpt exists first
-        if ( has_excerpt() ) {
-            $page_description = get_the_excerpt();
-        } else {
-            // Strip out raw shortcodes (like [wpdatatable...]) and HTML tags
-            $raw_content      = get_the_content();
-            $clean_content    = strip_shortcodes( $raw_content ); // Removes [wpdatatable ...]
-            $page_description = wp_strip_all_tags( $clean_content );
+        $post_id = get_queried_object_id();
+        $page_description = $post_id && 'page' === get_post_type( $post_id )
+            ? get_post_meta( $post_id, '_a1geo_meta_description', true )
+            : '';
+
+        if ( '' === trim( $page_description ) ) {
+            if ( has_excerpt() ) {
+                $page_description = get_the_excerpt();
+            } else {
+                // Strip out raw shortcodes (like [wpdatatable...]) and HTML tags
+                $raw_content      = get_the_content();
+                $clean_content    = strip_shortcodes( $raw_content );
+                $page_description = wp_strip_all_tags( $clean_content );
+            }
         }
 
         // Clean up extra white spaces / line breaks
@@ -2000,4 +2006,3 @@ function add_googleanalytics() {
 	<script> gtag('event', 'conversion', {'send_to': 'AW-973343263/ISTMCNCQ6e8BEJ-UkNAD'}); </script>		
 <?php } */
 ?>
-
