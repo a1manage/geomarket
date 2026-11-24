@@ -148,7 +148,7 @@ function a1geo_render_page_sub_header( $post ) {
     wp_nonce_field( 'a1geo_save_page_sub_header', 'a1geo_page_sub_header_nonce' );
     $sub_header = get_post_meta( $post->ID, '_a1geo_subtitle', true );
     ?>
-    <input type="text" name="a1geo_sub_header" id="a1geo-sub-header" class="widefat" maxlength="300" value="<?php echo esc_attr( $sub_header ); ?>" />
+    <input type="text" name="a1geo_sub_header" id="a1geo-sub-header" class="widefat" maxlength="500" value="<?php echo esc_attr( $sub_header ); ?>" />
     <p class="description"><?php esc_html_e( 'Shown as an H2 under the page title. Leave blank to hide it.', 'electro-custom' ); ?></p>
     <?php
 }
@@ -162,7 +162,7 @@ function a1geo_save_page_sub_header( $post_id ) {
     }
 
     $sub_header = isset( $_POST['a1geo_sub_header'] ) ? sanitize_text_field( wp_unslash( $_POST['a1geo_sub_header'] ) ) : '';
-    $sub_header = function_exists( 'mb_substr' ) ? mb_substr( $sub_header, 0, 300 ) : substr( $sub_header, 0, 300 );
+    $sub_header = function_exists( 'mb_substr' ) ? mb_substr( $sub_header, 0, 500 ) : substr( $sub_header, 0, 500 );
     if ( '' === $sub_header ) {
         delete_post_meta( $post_id, '_a1geo_subtitle' );
     } else {
@@ -321,12 +321,66 @@ if (!function_exists("additional_vendor_registration_scripts")) {
 }
 add_action("wp_enqueue_scripts", "additional_vendor_registration_scripts", 200);
 
+/**
+ * WebMCP: expose category navigation tools to AI agents.
+ */
+function a1geo_enqueue_webmcp() {
+	$cache_key  = 'a1geo_webmcp_categories';
+	$categories = get_transient( $cache_key );
+
+	if ( false === $categories ) {
+		$categories = array();
+		$terms      = get_terms( array( 'taxonomy' => 'product_cat', 'hide_empty' => false ) );
+
+		if ( ! is_wp_error( $terms ) ) {
+			$by_id = array();
+			foreach ( $terms as $term ) {
+				$by_id[ $term->term_id ] = $term;
+			}
+
+			foreach ( $terms as $term ) {
+				// Category listings are pages that share the category slug.
+				if ( ! $term->parent || ! isset( $by_id[ $term->parent ] ) || ! get_page_by_path( $term->slug ) ) {
+					continue;
+				}
+				$categories[] = array(
+					'slug'  => $term->slug,
+					'name'  => wp_specialchars_decode( $term->name ),
+					'group' => wp_specialchars_decode( $by_id[ $term->parent ]->name ),
+					'url'   => get_permalink( get_page_by_path( $term->slug ) ),
+				);
+			}
+		}
+
+		set_transient( $cache_key, $categories, DAY_IN_SECONDS );
+	}
+
+	wp_enqueue_script(
+		'a1geo-webmcp',
+		get_stylesheet_directory_uri() . '/assets/js/a1geo-webmcp.js',
+		array(),
+		filemtime( get_stylesheet_directory() . '/assets/js/a1geo-webmcp.js' ),
+		true
+	);
+	wp_add_inline_script(
+		'a1geo-webmcp',
+		'window.a1geoWebMcp = ' . wp_json_encode( array( 'categories' => $categories ) ) . ';',
+		'before'
+	);
+}
+add_action( 'wp_enqueue_scripts', 'a1geo_enqueue_webmcp' );
+
+add_action( 'edited_product_cat', function () { delete_transient( 'a1geo_webmcp_categories' ); } );
+add_action( 'created_product_cat', function () { delete_transient( 'a1geo_webmcp_categories' ); } );
+add_action( 'delete_product_cat', function () { delete_transient( 'a1geo_webmcp_categories' ); } );
+add_action( 'save_post_page', function () { delete_transient( 'a1geo_webmcp_categories' ); } );
+
 function electro_custom_enqueue_styles()
 {
 	wp_enqueue_style("electro-custom-style", get_stylesheet_uri());
 }
 
-wp_enqueue_style("a1geo-custom-style", get_stylesheet_directory_uri() . "/assets/css/a1geo.css", [], "1.7", false);
+wp_enqueue_style("a1geo-custom-style", get_stylesheet_directory_uri() . "/assets/css/a1geo.css", [], "1.9", false);
 
 if (!function_exists("electro_dokan_product_edit_add_specifications")) {
 	function electro_dokan_product_edit_add_specifications($post, $post_id)
@@ -1246,6 +1300,8 @@ define( 'THEME_INC_DIR', get_stylesheet_directory() . '/includes/' );
  * Core Component Loading Array
  */
 $theme_includes = [    
+	'a1geo-header-navigation.php',
+	'a1geo-papers.php',
 	'product-extra.php', // Additional properties such as published date and featured assigned date
     'a1-management.php', // Custom WP_List_Tables and admin dashboard panels
 	'remove-unncessary-acf-data.php', // Remove data before saving product
@@ -1408,39 +1464,52 @@ add_action( 'template_redirect', 'a1geo_record_page_access' );
 function import_dokan_vendors_from_csv( $csv_file_path, $output_skipped_csv ) {
     if ( ! file_exists( $csv_file_path ) || ! is_readable( $csv_file_path ) ) {
         error_log( "Dokan Import Error: Source file not found or unreadable at {$csv_file_path}" );
-        return;
+        return new WP_Error( 'vendor_import_input', 'Vendor import file is missing or unreadable.' );
     }
 
     $input_handle = fopen( $csv_file_path, 'r' );
     if ( $input_handle === false ) {
-        return;
+        return new WP_Error( 'vendor_import_input', 'Could not open the vendor import file.' );
+    }
+    if ( ! flock( $input_handle, LOCK_EX | LOCK_NB ) ) {
+        fclose( $input_handle );
+        return new WP_Error( 'vendor_import_locked', 'Another vendor import is already running.' );
     }
 
-    // Open file stream for outputting skipped rows
     $skipped_handle = fopen( $output_skipped_csv, 'w' );
-    if ( $skipped_handle !== false ) {
-        // Write CSV Header for the skipped file (6th column is reason)
-        fputcsv( $skipped_handle, array( 'Account Name', 'Store Name', 'Email', 'Password', 'Country', 'Skip Reason' ) );
+    if ( $skipped_handle === false ) {
+        fclose( $input_handle );
+        return new WP_Error( 'vendor_import_output', 'Could not open the skipped-vendor report.' );
+    }
+    if ( false === fputcsv( $skipped_handle, array( 'Account Name', 'Store Name', 'Email', 'Country', 'Skip Reason' ) ) ) {
+        fclose( $skipped_handle );
+        fclose( $input_handle );
+        return new WP_Error( 'vendor_import_output', 'Could not write the skipped-vendor report.' );
     }
 
     $row_count    = 0;
     $imported     = 0;
     $skipped      = 0;
-    $phone_number = '2223344556677';
+    $has_more     = false;
+    $write_failed = false;
+    $phone_number = '6663344556677';
 
     // Get list of valid WooCommerce 2-letter country codes if available
     $valid_countries = function_exists( 'WC' ) && WC()->countries ? WC()->countries->get_countries() : array();
 
     while ( ( $data = fgetcsv( $input_handle, 1000, ',' ) ) !== false ) {
+        if ( $imported >= 40 ) {
+            $has_more = true;
+            break;
+        }
         $row_count++;
 
         // Helper function to handle skipping logic consistently
-        $record_skip = function( $reason ) use ( &$skipped, $skipped_handle, $data ) {
+        $record_skip = function( $reason ) use ( &$skipped, &$write_failed, $skipped_handle, $data ) {
             $skipped++;
-            if ( $skipped_handle !== false ) {
-                $row_to_write   = $data;
-                $row_to_write[] = $reason; // Append reason as 6th column
-                fputcsv( $skipped_handle, $row_to_write );
+            $row_to_write = array( $data[0] ?? '', $data[1] ?? '', $data[2] ?? '', $data[4] ?? '', $reason );
+            if ( false === fputcsv( $skipped_handle, $row_to_write ) ) {
+                $write_failed = true;
             }
         };
 
@@ -1523,11 +1592,12 @@ function import_dokan_vendors_from_csv( $csv_file_path, $output_skipped_csv ) {
     }
 
     fclose( $input_handle );
-    if ( $skipped_handle !== false ) {
-        fclose( $skipped_handle );
+    if ( ! fclose( $skipped_handle ) || $write_failed ) {
+        return new WP_Error( 'vendor_import_output', 'Could not finish writing the skipped-vendor report. Some accounts may have been imported.' );
     }
 
     error_log( "Dokan Vendor Import Summary: {$imported} imported, {$skipped} skipped out of {$row_count} entries." );
+    return array( 'imported' => $imported, 'skipped' => $skipped, 'has_more' => $has_more );
 }
 
 add_action( 'init', function() {
@@ -1541,12 +1611,24 @@ add_action( 'init', function() {
             wp_die( 'Unauthorized access: You must be logged in as an Administrator to run this import.', 'Unauthorized', array( 'response' => 403 ) );
         }
 
-        $csv_input   = ABSPATH . 'wp-content/uploads/vendors.csv';
-        $csv_skipped = ABSPATH . 'wp-content/uploads/skipped_vendors.csv';
+        $csv_input   = dirname( untrailingslashit( ABSPATH ) ) . '/a1geo-vendor-import/vendors.csv';
+        $csv_skipped = dirname( untrailingslashit( ABSPATH ) ) . '/a1geo-vendor-import/skipped_vendors.csv';
 
-        import_dokan_vendors_from_csv( $csv_input, $csv_skipped );
+        $result = import_dokan_vendors_from_csv( $csv_input, $csv_skipped );
+        if ( is_wp_error( $result ) ) {
+            error_log( 'Dokan Import Error: ' . $result->get_error_message() );
+            wp_die( esc_html( $result->get_error_message() ), 'Import Failed', array( 'response' => 500 ) );
+        }
 
-        wp_die( 'Vendor import process complete! Check <code>wp-content/uploads/skipped_vendors.csv</code> for any records that failed.', 'Import Complete' );
+        $message = sprintf(
+            'Imported %d vendors; skipped %d existing or invalid records. The skipped-vendor report is in the private import directory.',
+            $result['imported'],
+            $result['skipped']
+        );
+        if ( $result['has_more'] ) {
+            $message .= ' More rows remain. Run the import again to continue.';
+        }
+        wp_die( esc_html( $message ), $result['has_more'] ? 'Import Paused' : 'Import Complete' );
     }
 });
 
@@ -1556,6 +1638,30 @@ add_action( 'wp_head', function() {
         echo '<link rel="preload" as="image" href="' . esc_url( get_theme_file_uri( 'assets/img/bg.jpg' ) ) . '" fetchpriority="high">' . "\n";
     }
 }, 1 );
+
+/**
+ * Give the datasheet PDF icon links in wpDataTables cells an accessible name.
+ * The markup is generated in the database views, so it is patched at output time.
+ */
+add_filter( 'wpdatatables_filter_cell_output', 'a1geo_label_table_pdf_links' );
+
+function a1geo_label_table_pdf_links( $value ) {
+    if ( ! is_string( $value ) || false === strpos( $value, 'custom-pdf-icon' ) ) {
+        return $value;
+    }
+
+    return preg_replace_callback(
+        '/<a\b(?![^>]*\baria-label=)([^>]*)>(\s*<img\b[^>]*\bcustom-pdf-icon[^>]*>)/i',
+        static function ( $matches ) {
+            $img = $matches[2];
+            if ( ! preg_match( '/\balt=/i', $img ) ) {
+                $img = preg_replace( '/<img\b/i', '<img alt="PDF datasheet"', $img, 1 );
+            }
+            return '<a aria-label="Download PDF datasheet"' . $matches[1] . '>' . $img;
+        },
+        $value
+    );
+}
 
 /**
  * Inject Dynamic JSON-LD Schema Markup into <head>
@@ -1849,7 +1955,7 @@ add_action( 'wp_body_open', function() {
     $destination_url  = home_url( '/' );
     ?>
     <div class="google-crawler-image" aria-hidden="true" style="position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;">
-        <a href="<?php echo esc_url( $destination_url ); ?>">
+        <a href="<?php echo esc_url( $destination_url ); ?>" tabindex="-1">
             <img src="<?php echo esc_url( $custom_image_url ); ?>" alt="Geophysical market" width="1200" height="630" />
         </a>
     </div>

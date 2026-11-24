@@ -37,25 +37,9 @@ $post_query = new WP_Query(
 	)
 );
 
-function a1geo_post_table_meta_value( $post_id, $keys ) {
-	foreach ( $keys as $key ) {
-		$value = get_post_meta( $post_id, $key, true );
-
-		if ( '' !== $value && null !== $value ) {
-			return absint( $value );
-		}
-	}
-
-	return 0;
-}
-
-function a1geo_post_table_get_views( $post_id ) {
-	if ( function_exists( 'pvc_get_post_views' ) ) {
-		return absint( pvc_get_post_views( $post_id, 'total' ) );
-	}
-
-	return a1geo_post_table_meta_value( $post_id, array( 'post_views', '_post_views', 'views', 'view_count' ) );
-}
+$post_view_counts = function_exists( 'a1geo_paper_view_counts' )
+	? a1geo_paper_view_counts( wp_list_pluck( $post_query->posts, 'ID' ) )
+	: array();
 
 function a1geo_post_table_attachment_url( $post_id, $field_name ) {
 	if ( ! function_exists( 'get_field' ) ) {
@@ -289,8 +273,8 @@ electro_get_header( $header_style );
 								<?php while ( $post_query->have_posts() ) : $post_query->the_post(); ?>
 								<?php
 								$post_id       = get_the_ID();
-								$views         = a1geo_post_table_get_views( $post_id );
-								$likes         = function_exists( 'a1geo_get_post_likes_count' ) ? a1geo_get_post_likes_count( $post_id ) : 0;
+								$views         = $post_view_counts[ $post_id ] ?? null;
+								$likes         = function_exists( 'a1geo_paper_like_count' ) ? a1geo_paper_like_count( $post_id ) : null;
 								$document_url  = a1geo_post_table_attachment_url( $post_id, 'attach_document' );
 								$description   = wp_trim_words( wp_strip_all_tags( get_the_excerpt() ), 100, '...' );
 								$acf_author    = function_exists( 'get_field' ) ? get_field( 'author', $post_id ) : '';
@@ -308,11 +292,11 @@ electro_get_header( $header_style );
 										<span class="post-category-table-id-views">
 											<?php
 											esc_html_e( 'Views:', 'a1-geo' );
-											echo ' ' . esc_html( number_format_i18n( $views ) );
+											echo ' ' . ( null === $views ? esc_html__( 'Unavailable', 'a1-geo' ) : esc_html( number_format_i18n( $views ) ) );
 											?>
 										</span>
 										<span class="post-category-table-id-views">
-											<?php esc_html_e( 'Likes:', 'a1-geo' ); ?> <?php echo esc_html( number_format_i18n( $likes ) ); ?>
+											<?php esc_html_e( 'Likes:', 'a1-geo' ); ?> <?php echo null === $likes ? esc_html__( 'Unavailable', 'a1-geo' ) : esc_html( number_format_i18n( $likes ) ); ?>
 										</span>
 									</td>
 									<td>

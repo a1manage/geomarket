@@ -771,6 +771,45 @@ table.wp-list-table .column-user_name {
     min-width: 0;
 }
 
+.a1geo-paper-like summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: #1d5089;
+    list-style: none;
+}
+
+.a1geo-paper-like summary::-webkit-details-marker {
+    display: none;
+}
+
+.a1geo-paper-like summary:focus-visible {
+    outline: 2px solid #1d5089;
+    outline-offset: 3px;
+}
+
+.a1geo-paper-like svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+}
+
+.a1geo-paper-like.is-liked summary {
+    color: #075a33;
+}
+
+.a1geo-paper-like.is-liked svg {
+    fill: currentColor;
+}
+
+.a1geo-paper-like-status:not(:empty) {
+    display: block;
+    font-size: .85rem;
+}
+
 /* Image scaling fixes */
 .paper-featured-image img {
     width: 100%;
@@ -867,5 +906,3 @@ table.wp-list-table .column-user_name {
       min-height: 360px;
    }
 }
-
-
