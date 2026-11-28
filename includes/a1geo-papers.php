@@ -4,19 +4,40 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+function a1geo_paper_legacy_template_hierarchy( $templates ) {
+	foreach ( $templates as &$template ) {
+		if ( 'single-papers.php' === $template ) {
+			$template = 'single-paper.php';
+		}
+	}
+	unset( $template );
+	return $templates;
+}
+add_filter( 'single_template_hierarchy', 'a1geo_paper_legacy_template_hierarchy' );
+add_filter( 'page_template_hierarchy', 'a1geo_paper_legacy_template_hierarchy' );
+
+function a1geo_paper_legacy_template_option( $templates ) {
+	$templates['single-papers.php'] = __( 'Papers Custom Template (legacy)', 'a1-geo' );
+	return $templates;
+}
+add_filter( 'theme_post_templates', 'a1geo_paper_legacy_template_option' );
+add_filter( 'theme_page_templates', 'a1geo_paper_legacy_template_option' );
+
 function a1geo_paper_rewrite_rules() {
 	add_rewrite_rule( '^papers/([1-9][0-9]*)/?$', 'index.php?p=$matches[1]&a1geo_paper_route=1', 'top' );
+	add_rewrite_rule( '^paper-category/([^/]+)/?$', 'index.php?pagename=paper-category&a1geo_category_slug=$matches[1]', 'top' );
+	add_rewrite_rule( '^paper-category-results/?$', 'index.php?pagename=paper-category', 'top' );
 }
 add_action( 'init', 'a1geo_paper_rewrite_rules' );
 
 function a1geo_paper_refresh_rewrite_rules() {
-	if ( '1' === get_option( 'a1geo_paper_permalink_version' ) || ! get_option( 'permalink_structure' ) ) {
+	if ( '3' === get_option( 'a1geo_paper_permalink_version' ) || ! get_option( 'permalink_structure' ) ) {
 		return;
 	}
 	flush_rewrite_rules( false );
 	$rules = get_option( 'rewrite_rules' );
-	if ( is_array( $rules ) && isset( $rules['^papers/([1-9][0-9]*)/?$'] ) ) {
-		update_option( 'a1geo_paper_permalink_version', '1', false );
+	if ( is_array( $rules ) && isset( $rules['^papers/([1-9][0-9]*)/?$'], $rules['^paper-category/([^/]+)/?$'], $rules['^paper-category-results/?$'] ) ) {
+		update_option( 'a1geo_paper_permalink_version', '3', false );
 	} else {
 		error_log( 'Paper permalinks: could not register the rewrite rule. Check the permalink settings.' );
 	}
@@ -25,9 +46,83 @@ add_action( 'wp_loaded', 'a1geo_paper_refresh_rewrite_rules', 20 );
 
 function a1geo_paper_query_vars( $vars ) {
 	$vars[] = 'a1geo_paper_route';
+	$vars[] = 'a1geo_category_slug';
 	return $vars;
 }
 add_filter( 'query_vars', 'a1geo_paper_query_vars' );
+
+function a1geo_paper_category_url( $slug, $explorer_url ) {
+	if ( ! get_option( 'permalink_structure' ) ) {
+		return add_query_arg( 'paper_category', $slug, $explorer_url );
+	}
+	return home_url( user_trailingslashit( 'paper-category/' . $slug, 'page' ) );
+}
+
+function a1geo_is_paper_category_route() {
+	global $wp;
+	return isset( $wp->matched_rule ) && '^paper-category/([^/]+)/?$' === $wp->matched_rule;
+}
+
+function a1geo_paper_category_route() {
+	if ( ! a1geo_is_paper_category_route() ) {
+		return;
+	}
+	$slug = get_query_var( 'a1geo_category_slug' );
+	$term = is_string( $slug ) ? get_category_by_slug( $slug ) : false;
+	$papers = get_category_by_slug( 'papers' );
+	if ( ! is_page_template( 'template-paper-category-explorer.php' ) || ! $term || ! $papers
+		|| ! in_array( (int) $papers->term_id, get_ancestors( $term->term_id, 'category' ), true ) ) {
+		global $wp_query;
+		$wp_query->set_404();
+		status_header( 404 );
+		nocache_headers();
+	}
+}
+add_action( 'template_redirect', 'a1geo_paper_category_route', 0 );
+
+function a1geo_paper_category_canonical_redirect( $redirect ) {
+	return a1geo_is_paper_category_route() ? false : $redirect;
+}
+add_filter( 'redirect_canonical', 'a1geo_paper_category_canonical_redirect' );
+
+function a1geo_paper_category_canonical_url( $canonical, $post ) {
+	if ( a1geo_is_paper_category_route() && ! is_404() ) {
+		return a1geo_paper_category_url( get_query_var( 'a1geo_category_slug' ), get_permalink( $post ) );
+	}
+	return $canonical;
+}
+add_filter( 'get_canonical_url', 'a1geo_paper_category_canonical_url', 10, 2 );
+
+function a1geo_paper_category_redirect_legacy() {
+	global $wp;
+	if ( ! isset( $wp->matched_rule, $_SERVER['REQUEST_METHOD'] )
+		|| ! in_array( $_SERVER['REQUEST_METHOD'], array( 'GET', 'HEAD' ), true )
+		|| ! is_page_template( 'template-paper-category-explorer.php' )
+		|| a1geo_is_paper_category_route() || ! get_option( 'permalink_structure' ) ) {
+		return;
+	}
+	$legacy_route = '^paper-category-results/?$' === $wp->matched_rule;
+	$args = wp_unslash( $_GET );
+	$input = isset( $args['paper_category'] ) ? $args['paper_category'] : '';
+	$input = is_array( $input ) && count( $input ) === 1 ? reset( $input ) : $input;
+	$term = is_string( $input ) ? get_category_by_slug( $input ) : false;
+	$papers = get_category_by_slug( 'papers' );
+	$valid = $term && $papers && in_array( (int) $papers->term_id, get_ancestors( $term->term_id, 'category' ), true );
+	if ( ! $valid && ! $legacy_route ) {
+		return;
+	}
+	$url = get_permalink();
+	if ( $valid ) {
+		$url = a1geo_paper_category_url( $term->slug, $url );
+		unset( $args['paper_category'] );
+	}
+	if ( $args ) {
+		$url = add_query_arg( $args, $url );
+	}
+	wp_safe_redirect( $url, 301, 'A1 GeoMarket' );
+	exit;
+}
+add_action( 'template_redirect', 'a1geo_paper_category_redirect_legacy', 1 );
 
 function a1geo_paper_permalink( $permalink, $post, $leavename ) {
 	if ( $leavename || ! get_option( 'permalink_structure' ) || ! a1geo_is_public_paper( $post->ID ) ) {
@@ -234,7 +329,7 @@ function a1geo_paper_verify_turnstile( $token ) {
 }
 
 function a1geo_paper_like_assets() {
-	if ( ! is_page_template( 'template-paper-explorer.php' ) && ! ( is_singular( 'post' ) && a1geo_is_public_paper( get_queried_object_id() ) ) ) {
+	if ( ! is_page_template( array( 'template-paper-explorer.php', 'template-paper-category-explorer.php' ) ) && ! ( is_singular( 'post' ) && a1geo_is_public_paper( get_queried_object_id() ) ) ) {
 		return;
 	}
 	$path = get_stylesheet_directory() . '/assets/js/a1geo-paper-likes.js';
@@ -426,7 +521,7 @@ function a1geo_paper_like_status() {
 	nocache_headers();
 	$email = isset( $_POST['email'] ) && is_string( $_POST['email'] ) ? strtolower( trim( wp_unslash( $_POST['email'] ) ) ) : '';
 	$ids = isset( $_POST['paper_ids'] ) && is_array( $_POST['paper_ids'] ) ? wp_unslash( $_POST['paper_ids'] ) : array();
-	if ( ( '' !== $email && ( ! is_email( $email ) || strlen( $email ) > 254 ) ) || ! $ids || count( $ids ) > 20 ) {
+	if ( ( '' !== $email && ( ! is_email( $email ) || strlen( $email ) > 254 ) ) || ! $ids || count( $ids ) > 100 ) {
 		wp_send_json_error( array( 'message' => __( 'Invalid status request.', 'a1-geo' ) ), 400 );
 	}
 	if ( ! a1geo_paper_likes_available() ) {
