@@ -1422,8 +1422,8 @@ function a1geo_record_page_access() {
 
     global $wpdb;
 
-    // Dynamically generate table name per month: page_access_logs_YYYY_MM
-    $table_name = 'page_access_logs_' . date( 'Y_m' ); 
+    $accessed_at = current_datetime();
+    $table_name = 'page_access_logs_' . $accessed_at->format( 'Y_m' );
 
     // Ensure the monthly table exists before attempting insertion
     a1geo_ensure_monthly_access_log_table( $table_name );
@@ -1450,7 +1450,7 @@ function a1geo_record_page_access() {
 
     $user_agent = ! empty( $_SERVER['HTTP_USER_AGENT'] ) ? substr( sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ), 0, 500 ) : 'Unknown';
 
-    $wpdb->insert(
+    $result = $wpdb->insert(
         $table_name,
         array(
             'user_id'    => $current_user_id,
@@ -1458,9 +1458,13 @@ function a1geo_record_page_access() {
             'page_url'   => esc_url_raw( $current_url ),
             'ip_address' => $ip_address,
             'user_agent' => $user_agent,
+            'accessed_at' => $accessed_at->format( 'Y-m-d H:i:s' ),
         ),
-        array( '%d', '%d', '%s', '%s', '%s' )
+        array( '%d', '%d', '%s', '%s', '%s', '%s' )
     );
+    if ( false === $result ) {
+        error_log( 'Page access log: failed to record access: ' . $wpdb->last_error );
+    }
 }
 add_action( 'template_redirect', 'a1geo_record_page_access' );
 

@@ -202,6 +202,9 @@
 	.paper-explorer-back { margin: 18px 0; }
 	.paper-explorer-back a { color: #1d5089; text-decoration: underline; }
 	.paper-explorer-back a:hover, .paper-explorer-back a:focus-visible { color: #12355b; }
+	.a1geo-paper-back-to-top { position: fixed !important; top: auto; bottom: 1.25rem !important; }
+	.a1geo-paper-back-to-top[hidden] { display: none; }
+	.a1geo-paper-back-to-top .back-to-top-link { position: static !important; }
 	.paper-explorer-notice { padding: 14px; background: #f7f9fa; border: 1px solid #d9dde2; margin-top: 16px; }
 	.paper-explorer .a1geo-paper-like-form { display: grid; gap: 8px; max-width: 420px; margin-top: 10px; }
 	.paper-explorer .a1geo-paper-like-form p { font-size: .9rem; }

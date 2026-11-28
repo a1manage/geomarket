@@ -30,7 +30,7 @@ function a1geo_install_browser_views_table() {
 		error_log( 'Browser views: failed to create table: ' . $wpdb->last_error );
 		return;
 	}
-	update_option( 'a1geo_browser_views_started_at', $wpdb->get_var( 'SELECT CURRENT_TIMESTAMP' ), false );
+	update_option( 'a1geo_browser_views_started_at', current_time( 'mysql' ), false );
 	update_option( 'a1geo_browser_views_schema', '1', false );
 }
 add_action( 'init', 'a1geo_install_browser_views_table' );
@@ -79,9 +79,10 @@ function a1geo_record_browser_view() {
 	}
 	$table = a1geo_browser_views_table();
 	$result = $wpdb->query( $wpdb->prepare(
-		"INSERT INTO `$table` (event_id, page_url) VALUES (%s, %s) ON DUPLICATE KEY UPDATE event_id = VALUES(event_id)",
+		"INSERT INTO `$table` (event_id, page_url, viewed_at) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE event_id = VALUES(event_id)",
 		$event_id,
-		$page_url
+		$page_url,
+		current_time( 'mysql' )
 	) );
 	if ( false === $result ) {
 		error_log( 'Browser views: failed to record event: ' . $wpdb->last_error );

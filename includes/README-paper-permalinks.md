@@ -33,6 +33,7 @@ The pretty route requires the category-explorer page slug `paper-category`.
 Both explorers offer 5, 10, 20, 50 or 100 papers per page (20 by default), with first,
 previous, next and last page navigation. Changing the search, sort, category
 or page size returns to the first page while preserving the other selections.
+Both explorers show a scroll-to-top control after scrolling down.
 Opening a paper from a category explorer preserves the category, search, sort,
 page size and page number for the single-paper back link. Direct paper visits
 and links from the general explorer retain the general explorer back link.

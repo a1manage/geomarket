@@ -18,12 +18,20 @@ The browser page-view tracker starts when the new table is installed. It
 records a page once per browser document after explicit WPConsent statistics
 consent and WP Consent API approval. It honors Global Privacy Control unless
 the saved preference explicitly overrides it. The tracker stores an event ID,
-URL path without query or fragment, and database timestamp; it does not store
+URL path without query or fragment, and timestamp; it does not store
 IP addresses or user agents. Page paths can still contain personal information.
 The event ID prevents duplicate submissions of the same event, not bots.
 Historical browser views cannot be reconstructed, and the installation day is
 partial. JavaScript blockers, consent, caching, site configuration, and the
-database time zone can make these counts differ from Google Analytics.
+reporting time zone can make these counts differ from Google Analytics.
+
+New access-log and browser-view timestamps use the WordPress time zone set in
+Settings > General, regardless of the database or PHP server time zone. Monthly
+access-log tables are selected using that same time zone. Existing timestamps
+are not converted; older rows may use a different database time zone. Confirm
+their original time zone and account for daylight saving and month boundaries
+before migrating historical data. Changing the WordPress time zone later also
+does not convert existing rows.
 
 The tracker uses the WordPress AJAX endpoint and the WPConsent and WP Consent
 API plugins. If the consent API or the statistics preference is unavailable,

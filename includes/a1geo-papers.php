@@ -352,6 +352,20 @@ function a1geo_paper_like_assets() {
 }
 add_action( 'wp_enqueue_scripts', 'a1geo_paper_like_assets' );
 
+function a1geo_paper_explorer_scrollup( $enabled ) {
+	return is_page_template( array( 'template-paper-explorer.php', 'template-paper-category-explorer.php' ) ) ? true : $enabled;
+}
+add_filter( 'electro_enable_scrollup', 'a1geo_paper_explorer_scrollup', 20 );
+
+function a1geo_paper_explorer_scrollup_assets() {
+	if ( ! is_page_template( array( 'template-paper-explorer.php', 'template-paper-category-explorer.php' ) ) ) {
+		return;
+	}
+	$path = get_stylesheet_directory() . '/assets/js/a1geo-paper-scroll-top.js';
+	wp_enqueue_script( 'a1geo-paper-scroll-top', get_stylesheet_directory_uri() . '/assets/js/a1geo-paper-scroll-top.js', array(), filemtime( $path ), true );
+}
+add_action( 'wp_enqueue_scripts', 'a1geo_paper_explorer_scrollup_assets' );
+
 function a1geo_paper_likes_available() {
 	$secret = get_option( 'a1geo_paper_likes_secret' );
 	return '1' === get_option( 'a1geo_paper_likes_schema' ) && is_string( $secret ) && strlen( $secret ) >= 32;
