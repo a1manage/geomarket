@@ -1311,6 +1311,7 @@ define( 'THEME_INC_DIR', get_stylesheet_directory() . '/includes/' );
 $theme_includes = [    
 	'a1geo-header-navigation.php',
 	'a1geo-papers.php',
+	'a1geo-browser-views.php',
 	'product-extra.php', // Additional properties such as published date and featured assigned date
     'a1-management.php', // Custom WP_List_Tables and admin dashboard panels
 	'remove-unncessary-acf-data.php', // Remove data before saving product

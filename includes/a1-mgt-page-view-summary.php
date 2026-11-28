@@ -20,8 +20,10 @@ class A1_Page_View_Summary_List_Table extends WP_List_Table {
     public function get_columns() {
         return array(
             'page_url'        => __( 'Tracked Destination URL Link Path', 'a1-geo' ),
-            'unique_visitors' => __( 'Unique Visitors (IPs)', 'a1-geo' ),
-            'actual_clicks'   => __( 'Actual Clicks (Filtered)', 'a1-geo' ),
+            'unique_visitors' => __( 'Distinct IPs (Including Bots)', 'a1-geo' ),
+            'actual_clicks'   => __( 'Requests Without Known Bot Signatures', 'a1-geo' ),
+            'burst_views'     => __( 'Suspicious Burst Requests', 'a1-geo' ),
+            'estimated_views' => __( 'Views Excluding Bots and Bursts', 'a1-geo' ),
             'raw_views'       => __( 'Raw Views (Inc. Bots)', 'a1-geo' ),
         );
     }
@@ -31,6 +33,8 @@ class A1_Page_View_Summary_List_Table extends WP_List_Table {
             'page_url'        => array( 'page_url', false ),
             'unique_visitors' => array( 'unique_visitors', false ),
             'actual_clicks'   => array( 'actual_clicks', true ),
+            'burst_views'     => array( 'burst_views', false ),
+            'estimated_views' => array( 'estimated_views', false ),
             'raw_views'       => array( 'raw_views', false ),
         );
     }
@@ -48,6 +52,10 @@ class A1_Page_View_Summary_List_Table extends WP_List_Table {
                 return '<div style="text-align:center; font-weight:700; color:#135e96; background:#f0f6fc; padding:4px; border-radius:4px;">' . esc_html( number_format_i18n( $item['actual_clicks'] ) ) . '</div>';
             case 'raw_views':
                 return '<div style="text-align:center; font-weight:500;">' . esc_html( number_format_i18n( $item['raw_views'] ) ) . '</div>';
+            case 'burst_views':
+                return '<div style="text-align:center;">' . ( null === $item['burst_views'] ? esc_html__( 'Unavailable', 'a1-geo' ) : esc_html( number_format_i18n( $item['burst_views'] ) ) ) . '</div>';
+            case 'estimated_views':
+                return '<div style="text-align:center; font-weight:700;">' . ( null === $item['estimated_views'] ? esc_html__( 'Unavailable', 'a1-geo' ) : esc_html( number_format_i18n( $item['estimated_views'] ) ) ) . '</div>';
             default:
                 return isset( $item[ $column_name ] ) ? esc_html( $item[ $column_name ] ) : '';
         }
@@ -133,6 +141,201 @@ function a1geo_get_monthly_logs_subquery( $start_date_str, $end_date_str ) {
     return '(' . implode( ' UNION ALL ', $subquery_parts ) . ') AS combined_logs';
 }
 
+function a1geo_page_view_bot_signatures() {
+    return array(
+        'BV' => array( 'title' => 'BlogVault automation signature', 'terms' => array( 'blogvault' ) ),
+        'M'  => array( 'title' => 'Meta crawler signature', 'terms' => array( 'facebookexternalhit', 'facebot', 'meta-webindexer' ) ),
+        'B'  => array( 'title' => 'Bing crawler signature', 'terms' => array( 'bing' ) ),
+        'G'  => array( 'title' => 'Google or Lighthouse signature', 'terms' => array( 'google', 'lighthouse' ) ),
+        'AI' => array( 'title' => 'AI crawler signature', 'terms' => array( 'anthropic', 'claude', 'open-ai', 'openai', 'gptbot' ) ),
+        'A'  => array(
+            'title' => 'Automation or crawler signature',
+            'terms' => array( 'crawler', 'spider', 'bot', 'headlesschrome', 'semrush', 'ahrefs', 'yandex', 'builtwith', 'ingeniousbranleadresearch', 'python-urllib', 'python-requests', 'curl/', 'wget/', 'go-http-client' ),
+        ),
+    );
+}
+
+/**
+ * SQL predicate for requests without an identified automation signature.
+ * User agents and forwarded IP addresses do not prove visitor identity.
+ */
+function a1geo_actual_click_sql_condition() {
+    $conditions = array(
+        "BINARY LOWER(TRIM(ip_address)) NOT LIKE '2a03:2880:%'",
+    );
+    foreach ( a1geo_page_view_bot_signatures() as $signature ) {
+        foreach ( $signature['terms'] as $term ) {
+            $conditions[] = "BINARY LOWER(user_agent) NOT LIKE '%" . esc_sql( $term ) . "%'";
+        }
+    }
+
+    return implode( ' AND ', $conditions );
+}
+
+function a1geo_classify_page_view( $ip_address, $user_agent ) {
+    $ua_lower = strtolower( (string) $user_agent );
+    if ( str_starts_with( strtolower( trim( (string) $ip_address ) ), '2a03:2880:' ) ) {
+        return array( 'bot' => true, 'label' => 'M', 'title' => 'Meta network range; source not independently verified', 'verified' => false );
+    }
+    foreach ( a1geo_page_view_bot_signatures() as $label => $signature ) {
+        foreach ( $signature['terms'] as $term ) {
+            if ( str_contains( $ua_lower, $term ) ) {
+                return array( 'bot' => true, 'label' => $label, 'title' => $signature['title'] . ' (not independently verified)', 'verified' => false );
+            }
+        }
+    }
+
+    return array( 'bot' => false, 'label' => 'O', 'title' => 'No known automation signature; visitor not verified as human', 'verified' => false );
+}
+
+/**
+ * Flag requests that participate in a 60-second window with 20 distinct URLs.
+ * The result is a warning, not a human/bot determination.
+ */
+function a1geo_page_view_burst_counts( $start, $end ) {
+    global $wpdb;
+
+    $start_time = strtotime( $start . ' 00:00:00 UTC' );
+    $end_time = strtotime( $end . ' 00:00:00 UTC' );
+    if ( false === $start_time || false === $end_time || $end_time < $start_time ) {
+        return new WP_Error( 'invalid_burst_range', __( 'Suspicious traffic could not be calculated for the selected dates.', 'a1-geo' ) );
+    }
+    $end_time += DAY_IN_SECONDS;
+    $from = a1geo_get_monthly_logs_subquery( gmdate( 'Y-m-d', $start_time - 60 ), gmdate( 'Y-m-d', $end_time + 60 ) );
+    if ( ! $from ) {
+        if ( $wpdb->last_error ) {
+            error_log( 'Page view bursts: could not find access logs: ' . $wpdb->last_error );
+            return new WP_Error( 'burst_tables', __( 'Suspicious traffic could not be calculated.', 'a1-geo' ) );
+        }
+        return array( 'dates' => array(), 'pages' => array(), 'clients' => array(), 'non_bot_dates' => array(), 'non_bot_pages' => array() );
+    }
+
+    $where = $wpdb->prepare(
+        'WHERE accessed_at >= %s AND accessed_at < %s',
+        gmdate( 'Y-m-d H:i:s', $start_time - 60 ),
+        gmdate( 'Y-m-d H:i:s', $end_time + 60 )
+    );
+    $rows = $wpdb->get_results(
+        "SELECT ip_address, user_agent, page_url, accessed_at FROM {$from} {$where}
+         ORDER BY BINARY ip_address, BINARY user_agent, accessed_at LIMIT 50001",
+        ARRAY_A
+    );
+    if ( $wpdb->last_error || null === $rows ) {
+        error_log( 'Page view bursts: could not read access logs: ' . $wpdb->last_error );
+        return new WP_Error( 'burst_query', __( 'Suspicious traffic could not be calculated.', 'a1-geo' ) );
+    }
+    if ( count( $rows ) > 50000 ) {
+        return new WP_Error( 'burst_limit', __( 'Suspicious traffic is unavailable for this range; select a shorter date range.', 'a1-geo' ) );
+    }
+
+    $counts = array( 'dates' => array(), 'pages' => array(), 'clients' => array(), 'non_bot_dates' => array(), 'non_bot_pages' => array() );
+    $group = array();
+    $group_key = null;
+    $process = static function ( $events ) use ( &$counts, $start_time, $end_time ) {
+        $size = count( $events );
+        if ( 0 === $size ) {
+            return;
+        }
+        $is_bot = a1geo_classify_page_view( $events[0]['ip_address'], $events[0]['user_agent'] )['bot'];
+        $frequency = array();
+        $delta = array_fill( 0, $size + 1, 0 );
+        $right = 0;
+        for ( $left = 0; $left < $size; $left++ ) {
+            while ( $right < $size && $events[ $right ]['time'] <= $events[ $left ]['time'] + 60 ) {
+                $url = $events[ $right ]['page_url'];
+                $frequency[ $url ] = ( $frequency[ $url ] ?? 0 ) + 1;
+                $right++;
+            }
+            if ( count( $frequency ) >= 20 ) {
+                $delta[ $left ]++;
+                $delta[ $right ]--;
+            }
+            $url = $events[ $left ]['page_url'];
+            if ( 0 === --$frequency[ $url ] ) {
+                unset( $frequency[ $url ] );
+            }
+        }
+        $active = 0;
+        foreach ( $events as $index => $event ) {
+            $active += $delta[ $index ];
+            if ( $active <= 0 || $event['time'] < $start_time || $event['time'] >= $end_time ) {
+                continue;
+            }
+            $date = substr( $event['accessed_at'], 0, 10 );
+            $page = $event['page_url'];
+            $client = hash( 'sha256', serialize( array( $event['ip_address'], $event['user_agent'] ) ) );
+            $counts['dates'][ $date ] = ( $counts['dates'][ $date ] ?? 0 ) + 1;
+            $counts['pages'][ $page ] = ( $counts['pages'][ $page ] ?? 0 ) + 1;
+            $counts['clients'][ $page ][ $client ] = ( $counts['clients'][ $page ][ $client ] ?? 0 ) + 1;
+            if ( ! $is_bot ) {
+                $counts['non_bot_dates'][ $date ] = ( $counts['non_bot_dates'][ $date ] ?? 0 ) + 1;
+                $counts['non_bot_pages'][ $page ] = ( $counts['non_bot_pages'][ $page ] ?? 0 ) + 1;
+            }
+        }
+    };
+    foreach ( $rows as $row ) {
+        $key = serialize( array( $row['ip_address'], $row['user_agent'] ) );
+        if ( null !== $group_key && $key !== $group_key ) {
+            $process( $group );
+            $group = array();
+        }
+        $row['time'] = strtotime( $row['accessed_at'] . ' UTC' );
+        if ( false === $row['time'] ) {
+            error_log( 'Page view bursts: invalid access log timestamp.' );
+            return new WP_Error( 'burst_timestamp', __( 'Suspicious traffic could not be calculated.', 'a1-geo' ) );
+        }
+        $group[] = $row;
+        $group_key = $key;
+    }
+    $process( $group );
+    return $counts;
+}
+
+function a1geo_render_browser_view_report( $start, $end, $page_url = '' ) {
+    global $wpdb;
+    $started = get_option( 'a1geo_browser_views_started_at' );
+    if ( '1' !== get_option( 'a1geo_browser_views_schema' ) || ! is_string( $started ) || ! $started ) {
+        echo '<div class="notice notice-warning"><p>' . esc_html__( 'Browser view tracking is not available. Check the browser view table and site logs.', 'a1-geo' ) . '</p></div>';
+        return;
+    }
+    $table = a1geo_browser_views_table();
+    $where = $wpdb->prepare( 'viewed_at >= %s AND viewed_at < DATE_ADD(%s, INTERVAL 1 DAY)', $start, $end );
+    if ( '' !== $page_url ) {
+        $where .= $wpdb->prepare( ' AND page_url = %s', $page_url );
+    }
+    $rows = $wpdb->get_results( "SELECT page_url, COUNT(*) AS views FROM `$table` WHERE $where GROUP BY page_url ORDER BY views DESC", ARRAY_A );
+    if ( null === $rows || $wpdb->last_error ) {
+        error_log( 'Browser views: report query failed: ' . $wpdb->last_error );
+        echo '<div class="notice notice-error"><p>' . esc_html__( 'Browser views could not be loaded. Check the site logs.', 'a1-geo' ) . '</p></div>';
+        return;
+    }
+    $total = 0;
+    foreach ( $rows as $row ) {
+        $total += (int) $row['views'];
+    }
+    ?>
+    <div style="background:#fff; padding:20px; border:1px solid #ccd0d4; margin-top:20px;">
+        <h3><?php esc_html_e( 'Browser Page Views (Statistics Consent)', 'a1-geo' ); ?></h3>
+        <p><?php printf( esc_html__( 'Collection started at %s (database time). Earlier periods, and the part of the start day before collection, are unavailable. Counts require JavaScript and statistics consent; they do not prove a human visit and are not directly equivalent to GA4.', 'a1-geo' ), esc_html( $started ) ); ?></p>
+        <?php if ( $end < substr( $started, 0, 10 ) ) : ?>
+            <p><?php esc_html_e( 'Browser views are unavailable for this historical period.', 'a1-geo' ); ?></p>
+        <?php else : ?>
+            <p><strong><?php printf( esc_html__( 'Recorded browser page views: %s', 'a1-geo' ), esc_html( number_format_i18n( $total ) ) ); ?></strong></p>
+            <?php if ( $rows ) : ?>
+                <table class="widefat striped">
+                    <thead><tr><th><?php esc_html_e( 'Page', 'a1-geo' ); ?></th><th><?php esc_html_e( 'Browser views', 'a1-geo' ); ?></th></tr></thead>
+                    <tbody>
+                    <?php foreach ( $rows as $row ) : ?>
+                        <tr><td><?php echo esc_html( $row['page_url'] ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row['views'] ) ); ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
 /**
  * Displays selection filters on top.
  * - Date Range: Chart aggregates views/clicks daily (dd/MM/yyyy).
@@ -163,8 +366,8 @@ function render_page_view_summary() {
         $display_end   = date( 'Y-m-t', strtotime( $end_bound . '-01' ) );
 
         $sql_where = $wpdb->prepare( "WHERE DATE_FORMAT(accessed_at, '%%Y-%%m') BETWEEN %s AND %s", $start_bound, $end_bound );
-        $sql_select_time = "DATE_FORMAT(accessed_at, '%%Y-%%m-01')";
-        $sql_group = "GROUP BY DATE_FORMAT(accessed_at, '%%Y-%%m')";
+        $sql_select_time = "DATE_FORMAT(accessed_at, '%Y-%m-01')";
+        $sql_group = "GROUP BY DATE_FORMAT(accessed_at, '%Y-%m-01')";
     }
 
     // Determine subquery dynamically based on target monthly tables in date range
@@ -172,79 +375,78 @@ function render_page_view_summary() {
 
     $chart_records = array();
     $table_records = array();
+    $report_error = false;
+    $actual_click_condition = a1geo_actual_click_sql_condition();
+    $burst_counts = a1geo_page_view_burst_counts( $display_start, $display_end );
 
     if ( $from_table ) {
         // 3. Query Aggregated Time-Series Data for Chart.js
-        $chart_records_sql = $wpdb->prepare(
+        $chart_records_sql =
             "SELECT {$sql_select_time} AS time_point,
                     COUNT(id) AS total_views,
-                    SUM(CASE WHEN 
-                        user_agent NOT LIKE '%%google%%' AND 
-                        user_agent NOT LIKE '%%bing%%' AND 
-                        user_agent NOT LIKE '%%claude-searchbot%%' AND 
-                        user_agent NOT LIKE '%%anthropic%%' AND 
-                        user_agent NOT LIKE '%%open-ai%%' AND
-                        user_agent NOT LIKE '%%openai%%'
-                    THEN 1 ELSE 0 END) AS total_clicks
+                    SUM(CASE WHEN {$actual_click_condition} THEN 1 ELSE 0 END) AS total_clicks
             FROM {$from_table}
             {$sql_where}
             {$sql_group}
-            ORDER BY time_point ASC"
-        );
+            ORDER BY time_point ASC";
 
         $chart_records = $wpdb->get_results( $chart_records_sql );
+        if ( null === $chart_records || $wpdb->last_error ) {
+            error_log( 'Page view summary: chart query failed: ' . $wpdb->last_error );
+            $report_error = true;
+        }
 
         // 4. Query Page Breakdown Metrics Data for WP_List_Table
-        $table_records = $wpdb->get_results(
-            "SELECT page_url, 
+        $table_records_sql =
+            "SELECT BINARY page_url AS page_url,
                     COUNT(id) AS raw_views, 
                     COUNT(DISTINCT ip_address) AS unique_visitors,
-                    SUM(CASE WHEN 
-                        user_agent NOT LIKE '%%google%%' AND 
-                        user_agent NOT LIKE '%%bing%%' AND 
-                        user_agent NOT LIKE '%%claude-searchbot%%' AND 
-                        user_agent NOT LIKE '%%anthropic%%' AND 
-                        user_agent NOT LIKE '%%open-ai%%' AND
-                        user_agent NOT LIKE '%%openai%%'
-                    THEN 1 ELSE 0 END) AS actual_clicks
-             FROM $from_table
-             $sql_where
-             GROUP BY page_url
-             ORDER BY actual_clicks DESC, raw_views DESC",
-            ARRAY_A
-        );
-
-        $table_records_sql = $wpdb->prepare(
-            "SELECT page_url, 
-                    COUNT(id) AS raw_views, 
-                    COUNT(DISTINCT ip_address) AS unique_visitors,
-                    SUM(CASE WHEN 
-                        user_agent NOT LIKE '%%google%%' AND 
-                        user_agent NOT LIKE '%%bing%%' AND 
-                        user_agent NOT LIKE '%%claude-searchbot%%' AND 
-                        user_agent NOT LIKE '%%anthropic%%' AND 
-                        user_agent NOT LIKE '%%open-ai%%' AND
-                        user_agent NOT LIKE '%%openai%%'
-                    THEN 1 ELSE 0 END) AS actual_clicks
+                    SUM(CASE WHEN {$actual_click_condition} THEN 1 ELSE 0 END) AS actual_clicks
             FROM {$from_table}
             {$sql_where}
-            GROUP BY page_url
-            ORDER BY actual_clicks DESC, raw_views DESC"
-        );
+            GROUP BY BINARY page_url
+            ORDER BY actual_clicks DESC, raw_views DESC";
         $table_records = $wpdb->get_results( $table_records_sql, ARRAY_A );
+        if ( null === $table_records || $wpdb->last_error ) {
+            error_log( 'Page view summary: page query failed: ' . $wpdb->last_error );
+            $report_error = true;
+        }
     }
 
-  
+    if ( is_array( $table_records ) ) {
+        foreach ( $table_records as &$record ) {
+            $record['burst_views'] = is_wp_error( $burst_counts ) ? null : ( $burst_counts['pages'][ $record['page_url'] ] ?? 0 );
+            $record['estimated_views'] = is_wp_error( $burst_counts ) ? null : (int) $record['actual_clicks'] - ( $burst_counts['non_bot_pages'][ $record['page_url'] ] ?? 0 );
+        }
+        unset( $record );
+    }
 
     $chart_labels = array();
     $chart_views  = array();
     $chart_clicks = array();
+    $chart_bursts = array();
+    $chart_estimated = array();
+    if ( ! is_wp_error( $burst_counts ) && 'date' !== $filter_mode ) {
+        $monthly_bursts = array();
+        $monthly_non_bot_bursts = array();
+        foreach ( $burst_counts['dates'] as $date => $count ) {
+            $month = substr( $date, 0, 7 ) . '-01';
+            $monthly_bursts[ $month ] = ( $monthly_bursts[ $month ] ?? 0 ) + $count;
+        }
+        foreach ( $burst_counts['non_bot_dates'] as $date => $count ) {
+            $month = substr( $date, 0, 7 ) . '-01';
+            $monthly_non_bot_bursts[ $month ] = ( $monthly_non_bot_bursts[ $month ] ?? 0 ) + $count;
+        }
+    }
 
     if ( ! empty( $chart_records ) ) {
         foreach ( $chart_records as $row ) {
             $chart_labels[] = date( 'd/m/Y', strtotime( $row->time_point ) );
             $chart_views[]  = (int) $row->total_views;
             $chart_clicks[] = (int) $row->total_clicks;
+            $chart_bursts[] = is_wp_error( $burst_counts ) ? null : ( 'date' === $filter_mode ? ( $burst_counts['dates'][ $row->time_point ] ?? 0 ) : ( $monthly_bursts[ $row->time_point ] ?? 0 ) );
+            $non_bot_bursts = is_wp_error( $burst_counts ) ? null : ( 'date' === $filter_mode ? ( $burst_counts['non_bot_dates'][ $row->time_point ] ?? 0 ) : ( $monthly_non_bot_bursts[ $row->time_point ] ?? 0 ) );
+            $chart_estimated[] = null === $non_bot_bursts ? null : (int) $row->total_clicks - $non_bot_bursts;
         }
     }
 
@@ -260,6 +462,13 @@ function render_page_view_summary() {
         <h1 style="margin-bottom: 20px; font-weight: 700; color: #23282d;">
             <?php esc_html_e( 'Traffic Analytics', 'a1-geo' ); ?>
         </h1>
+        <p><?php esc_html_e( 'Views excluding bots and bursts are estimates, not verified human views. Bursts are 20 distinct URLs within 60 seconds from the same IP and user agent. Burst counts can include known bots; overlapping requests are excluded only once.', 'a1-geo' ); ?></p>
+        <?php if ( is_wp_error( $burst_counts ) ) : ?>
+            <div class="notice notice-warning"><p><?php echo esc_html( $burst_counts->get_error_message() ); ?></p></div>
+        <?php endif; ?>
+        <?php if ( $report_error ) : ?>
+            <div class="notice notice-error"><p><?php esc_html_e( 'Some access-log data could not be loaded. Check the site logs.', 'a1-geo' ); ?></p></div>
+        <?php endif; ?>
 
         <!-- BLOCK 1: RADIO CONTROL FILTER TOOLBAR (TOP) -->
         <div class="notice notice-info" style="margin: 0 0 30px 0; padding: 20px; background: #fff; border-left-color: #b52025; box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);">
@@ -399,6 +608,7 @@ function render_page_view_summary() {
                 </form>
             </div>
 
+            <?php a1geo_render_browser_view_report( $display_start, $display_end ); ?>
         </div>
     </div>
 
@@ -412,7 +622,7 @@ function render_page_view_summary() {
                     labels: <?php echo json_encode( $chart_labels ); ?>,
                     datasets: [
                         {
-                            label: '<?php echo esc_js( 'date' === $filter_mode ? __( 'Total Daily Clicks (Filtered)', 'a1-geo' ) : __( 'Total Monthly Clicks (Filtered)', 'a1-geo' ) ); ?>',
+                            label: '<?php echo esc_js( 'date' === $filter_mode ? __( 'Daily Requests Without Known Bot Signatures', 'a1-geo' ) : __( 'Monthly Requests Without Known Bot Signatures', 'a1-geo' ) ); ?>',
                             data: <?php echo json_encode( $chart_clicks ); ?>,
                             borderColor: '#b52025',
                             backgroundColor: 'rgba(181, 32, 37, 0.08)',
@@ -421,6 +631,24 @@ function render_page_view_summary() {
                             borderWidth: 2,
                             pointRadius: 4,
                             pointHoverRadius: 6
+                        },
+                        {
+                            label: '<?php echo esc_js( __( 'Views Excluding Bots and Bursts', 'a1-geo' ) ); ?>',
+                            data: <?php echo wp_json_encode( $chart_estimated ); ?>,
+                            borderColor: '#008a20',
+                            fill: false,
+                            tension: 0.3,
+                            borderWidth: 2,
+                            pointRadius: 4
+                        },
+                        {
+                            label: '<?php echo esc_js( __( 'Suspicious Burst Requests', 'a1-geo' ) ); ?>',
+                            data: <?php echo wp_json_encode( $chart_bursts ); ?>,
+                            borderColor: '#dba617',
+                            fill: false,
+                            tension: 0.3,
+                            borderWidth: 2,
+                            pointRadius: 4
                         },
                         {
                             label: '<?php echo esc_js( 'date' === $filter_mode ? __( 'Total Daily Views (Inc. Bots)', 'a1-geo' ) : __( 'Total Monthly Views (Inc. Bots)', 'a1-geo' ) ); ?>',
@@ -467,9 +695,14 @@ function render_daily_view_drilldown() {
     
     // Check if partitioned table exists
     $table_exists = ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $target_table ) ) === $target_table );
+    $burst_counts = a1geo_page_view_burst_counts( $target_date, $target_date );
 
     echo '<div class="wrap" style="margin-top: 20px; max-width: 1200px;">';
     echo '<h1 style="font-weight: 700; color: #23282d; margin-bottom: 20px;">' . esc_html__( 'A1 Management — Daily Audit Tracking', 'a1-geo' ) . '</h1>';
+    echo '<p>' . esc_html__( 'Views excluding bots and bursts are estimates, not verified human views. Bursts are 20 distinct URLs within 60 seconds from the same IP and user agent. Burst counts can include known bots; overlapping requests are excluded only once.', 'a1-geo' ) . '</p>';
+    if ( is_wp_error( $burst_counts ) ) {
+        echo '<div class="notice notice-warning"><p>' . esc_html( $burst_counts->get_error_message() ) . '</p></div>';
+    }
 
     ?>
     <div class="notice notice-info" style="margin: 0 0 25px 0; padding: 15px; background: #fff; border-left-color: #0073aa; box-shadow: 0 1px 1px rgba(0,0,0,.05); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
@@ -537,14 +770,18 @@ function render_daily_view_drilldown() {
 
         if ( $table_exists ) {
             $ip_results = $wpdb->get_results( $wpdb->prepare(
-                "SELECT ip_address, user_agent, COUNT(id) AS hit_count, MAX(accessed_at) AS last_seen
+                "SELECT BINARY ip_address AS ip_address, BINARY user_agent AS user_agent, COUNT(id) AS hit_count, MAX(accessed_at) AS last_seen
                  FROM `{$target_table}`
-                 WHERE DATE(accessed_at) = %s AND page_url = %s
-                 GROUP BY ip_address, user_agent
+                 WHERE DATE(accessed_at) = %s AND BINARY page_url = BINARY %s
+                 GROUP BY BINARY ip_address, BINARY user_agent
                  ORDER BY hit_count DESC",
                 $target_date,
                 $view_url
             ) );
+            if ( null === $ip_results || $wpdb->last_error ) {
+                error_log( 'Page view drill-down: roster query failed: ' . $wpdb->last_error );
+                echo '<div class="notice notice-error"><p>' . esc_html__( 'Access-log entries could not be loaded. Check the site logs.', 'a1-geo' ) . '</p></div>';
+            }
         }
         ?>
         <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
@@ -561,22 +798,20 @@ function render_daily_view_drilldown() {
                         <th style="font-weight: 700; width: 22%;"><?php esc_html_e( 'Visitor IP Address', 'a1-geo' ); ?></th>
                         <th style="font-weight: 700; width: 53%;"><?php esc_html_e( 'User Agent Client Signature', 'a1-geo' ); ?></th>
                         <th style="font-weight: 700; width: 10%; text-align: center;"><?php esc_html_e( 'Total Hits', 'a1-geo' ); ?></th>
+                        <th style="font-weight: 700; width: 10%; text-align: center;"><?php esc_html_e( 'Burst Hits', 'a1-geo' ); ?></th>
+                        <th style="font-weight: 700; width: 10%; text-align: center;"><?php esc_html_e( 'Views Excluding Bots and Bursts', 'a1-geo' ); ?></th>
                         <th style="font-weight: 700; width: 15%; text-align: right;"><?php esc_html_e( 'Last Access Time', 'a1-geo' ); ?></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ( empty( $ip_results ) ) : ?>
-                        <tr><td colspan="4"><?php esc_html_e( 'No log entries traced for this target item.', 'a1-geo' ); ?></td></tr>
+                        <tr><td colspan="6"><?php esc_html_e( 'No log entries traced for this target item.', 'a1-geo' ); ?></td></tr>
                     <?php else : ?>
                         <?php foreach ( $ip_results as $row ) : 
-                            $ua_lower = strtolower( $row->user_agent );
-                            
-                            $is_google  = str_contains( $ua_lower, 'google' );
-                            $is_bing    = str_contains( $ua_lower, 'bing' );
-                            $is_claude  = str_contains( $ua_lower, 'claude-searchbot' ) || str_contains( $ua_lower, 'anthropic.com' );
-                            $is_openai  = str_contains( $ua_lower, 'open-ai.com' ) || str_contains( $ua_lower, 'openai' );
-                            
-                            $is_bot = ($is_google || $is_bing || $is_claude || $is_openai);
+                            $classification = a1geo_classify_page_view( $row->ip_address, $row->user_agent );
+                            $is_bot = $classification['bot'];
+                            $client_key = hash( 'sha256', serialize( array( $row->ip_address, $row->user_agent ) ) );
+                            $burst_hits = is_wp_error( $burst_counts ) ? null : ( $burst_counts['clients'][ $view_url ][ $client_key ] ?? 0 );
                             ?>
                             <tr style="<?php echo $is_bot ? 'opacity: 0.75;' : ''; ?>">
                                 <td>
@@ -584,19 +819,28 @@ function render_daily_view_drilldown() {
                                         <span class="dashicons dashicons-location-alt" style="font-size:16px; color:#666; vertical-align:middle; margin-right:4px;"></span>
                                         <?php echo esc_html( $row->ip_address ); ?>
                                     </strong>
-                                    
-                                    <?php if ( $is_google ) : ?>
-                                        <span style="font-weight: 900; color: #dc3232; margin-left: 6px; font-size: 14px;" title="Google Agent / Crawler">G</span>
-                                    <?php elseif ( $is_bing ) : ?>
-                                        <span style="font-weight: 900; color: #ffb900; text-shadow: 0px 1px 1px rgba(0,0,0,0.2); margin-left: 6px; font-size: 14px;" title="Bing Agent / Crawler">B</span>
-                                    <?php elseif ( $is_claude || $is_openai ) : ?>
-                                        <span style="font-weight: 900; color: #72777c; margin-left: 6px; font-size: 14px;" title="<?php echo $is_claude ? 'Anthropic Claude Bot' : 'OpenAI Bot'; ?>">AI</span>
-                                    <?php else : ?>
-                                        <span style="font-weight: 900; color: #46b450; margin-left: 6px; font-size: 14px;" title="Other / Human Visitor">O</span>
-                                    <?php endif; ?>
+
+                                    <?php
+                                    $badge_color = $is_bot ? '#72777c' : '#46b450';
+                                    if ( 'G' === $classification['label'] ) {
+                                        $badge_color = '#dc3232';
+                                    } elseif ( 'B' === $classification['label'] ) {
+                                        $badge_color = '#ffb900';
+                                    } elseif ( 'M' === $classification['label'] ) {
+                                        $badge_color = '#1877f2';
+                                    } elseif ( 'BV' === $classification['label'] ) {
+                                        $badge_color = '#8c4b00';
+                                    }
+                                    ?>
+                                    <span style="font-weight: 900; color: <?php echo esc_attr( $badge_color ); ?>; margin-left: 6px; font-size: 14px;"
+                                          title="<?php echo esc_attr( $classification['title'] ); ?>">
+                                        <?php echo esc_html( $classification['label'] ); ?>
+                                    </span>
                                 </td>
                                 <td style="font-size: 12px; color:#555; font-family: monospace;"><?php echo esc_html( $row->user_agent ); ?></td>
                                 <td style="text-align: center;"><span class="update-plugins count-filter" style="background:#f6f7f7; color:#3c434a; font-weight:600; padding:2px 8px; border-radius:10px; border:1px solid #dcdcde;"><?php echo (int) $row->hit_count; ?></span></td>
+                                <td style="text-align: center;"><?php echo null === $burst_hits ? esc_html__( 'Unavailable', 'a1-geo' ) : (int) $burst_hits; ?></td>
+                                <td style="text-align: center;"><?php echo null === $burst_hits ? esc_html__( 'Unavailable', 'a1-geo' ) : ( $is_bot ? 0 : (int) $row->hit_count - $burst_hits ); ?></td>
                                 <td style="text-align: right; color:#666; font-size:12px;"><?php echo esc_html( date( 'H:i:s', strtotime( $row->last_seen ) ) ); ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -613,24 +857,22 @@ function render_daily_view_drilldown() {
         $summary_results = array();
 
         if ( $table_exists ) {
-            $summary_results = $wpdb->get_results( $wpdb->prepare(
-                "SELECT page_url, 
+            $actual_click_condition = a1geo_actual_click_sql_condition();
+            $target_date_sql = esc_sql( $target_date );
+            $summary_results = $wpdb->get_results(
+                "SELECT BINARY page_url AS page_url,
                         COUNT(id) AS view_count, 
                         COUNT(DISTINCT ip_address) AS unique_visitors,
-                        SUM(CASE WHEN 
-                            user_agent NOT LIKE '%%google%%' AND 
-                            user_agent NOT LIKE '%%bing%%' AND 
-                            user_agent NOT LIKE '%%claude-searchbot%%' AND 
-                            user_agent NOT LIKE '%%anthropic%%' AND 
-                            user_agent NOT LIKE '%%open-ai%%' AND
-                            user_agent NOT LIKE '%%openai%%'
-                        THEN 1 ELSE 0 END) AS actual_clicks
+                        SUM(CASE WHEN {$actual_click_condition} THEN 1 ELSE 0 END) AS actual_clicks
                  FROM `{$target_table}`
-                 WHERE DATE(accessed_at) = %s
-                 GROUP BY page_url
-                 ORDER BY actual_clicks DESC, view_count DESC",
-                $target_date
-            ) );
+                 WHERE DATE(accessed_at) = '{$target_date_sql}'
+                 GROUP BY BINARY page_url
+                 ORDER BY actual_clicks DESC, view_count DESC"
+            );
+            if ( null === $summary_results || $wpdb->last_error ) {
+                error_log( 'Page view drill-down: summary query failed: ' . $wpdb->last_error );
+                echo '<div class="notice notice-error"><p>' . esc_html__( 'Access-log summary could not be loaded. Check the site logs.', 'a1-geo' ) . '</p></div>';
+            }
         }
         ?>
         <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
@@ -643,14 +885,16 @@ function render_daily_view_drilldown() {
                 <thead>
                     <tr>
                         <th style="font-weight: 700; width: 50%;"><?php esc_html_e( 'Tracked Destination URL Link Path', 'a1-geo' ); ?></th>
-                        <th style="font-weight: 700; width: 15%; text-align: center;"><?php esc_html_e( 'Unique Visitors (IPs)', 'a1-geo' ); ?></th>
-                        <th style="font-weight: 700; width: 15%; text-align: center; color: #2271b1;"><?php esc_html_e( 'Actual Clicks (Filtered)', 'a1-geo' ); ?></th>
+                        <th style="font-weight: 700; width: 15%; text-align: center;"><?php esc_html_e( 'Distinct IPs (Including Bots)', 'a1-geo' ); ?></th>
+                        <th style="font-weight: 700; width: 15%; text-align: center; color: #2271b1;"><?php esc_html_e( 'Requests Without Known Bot Signatures', 'a1-geo' ); ?></th>
+                        <th style="font-weight: 700; width: 15%; text-align: center;"><?php esc_html_e( 'Suspicious Burst Requests', 'a1-geo' ); ?></th>
+                        <th style="font-weight: 700; width: 15%; text-align: center;"><?php esc_html_e( 'Views Excluding Bots and Bursts', 'a1-geo' ); ?></th>
                         <th style="font-weight: 700; width: 20%; text-align: center;"><?php esc_html_e( 'Raw Views (Inc. Bots)', 'a1-geo' ); ?></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ( empty( $summary_results ) ) : ?>
-                        <tr><td colspan="4"><?php esc_html_e( 'No system data logging records identified within this specific calendar frame context.', 'a1-geo' ); ?></td></tr>
+                        <tr><td colspan="6"><?php esc_html_e( 'No system data logging records identified within this specific calendar frame context.', 'a1-geo' ); ?></td></tr>
                     <?php else : ?>
                         <?php foreach ( $summary_results as $row ) : 
                             $drilldown_href = admin_url( 'admin.php?page=daily-view-drilldown&target_date=' . $target_date . '&view_url=' . urlencode( $row->page_url ) );
@@ -666,6 +910,8 @@ function render_daily_view_drilldown() {
                                 <td style="text-align: center; font-weight: 700; color: #135e96; background: #f0f6fc;">
                                     <?php echo (int) $row->actual_clicks; ?>
                                 </td>
+                                <td style="text-align: center;"><?php echo is_wp_error( $burst_counts ) ? esc_html__( 'Unavailable', 'a1-geo' ) : (int) ( $burst_counts['pages'][ $row->page_url ] ?? 0 ); ?></td>
+                                <td style="text-align: center; font-weight: 700;"><?php echo is_wp_error( $burst_counts ) ? esc_html__( 'Unavailable', 'a1-geo' ) : (int) $row->actual_clicks - ( $burst_counts['non_bot_pages'][ $row->page_url ] ?? 0 ); ?></td>
                                 <td style="text-align: center;">
                                     <a href="<?php echo esc_url( $drilldown_href ); ?>" class="button button-small" style="font-weight: 500; background: #fff; color: #3c434a; border-color: #dcdcde; border-radius: 4px;">
                                         <?php echo (int) $row->view_count; ?> <?php esc_html_e( 'views', 'a1-geo' ); ?> »
@@ -680,5 +926,6 @@ function render_daily_view_drilldown() {
         <?php
     }
 
+    a1geo_render_browser_view_report( $target_date, $target_date, is_string( $view_url ) ? $view_url : '' );
     echo '</div>';
 }
