@@ -36,7 +36,7 @@ electro_get_header( $header_style );
 <div id="primary" class="entry-content">
 	<main id="main" class="site-main paper-category-home">
 		<?php do_action( 'electro_page_before' ); ?>
-		<div class="stretch-full-width slider-block no-lazyload" style="background-image:url(<?php echo esc_url( get_theme_file_uri( 'assets/img/bg.jpg' ) ); ?>); background-position: center bottom; background-size: cover;">
+		<div class="stretch-full-width slider-block no-lazyload paper-category-banner">
 			<div class="container">
 				<div class="pb-4 pt-3">
 					<div class="row justify-content-end">
@@ -50,7 +50,7 @@ electro_get_header( $header_style );
 		<?php if ( ! $papers || ! $explorer_url ) : ?>
 			<p><?php esc_html_e( 'Paper categories are unavailable. Please contact the site administrator.', 'a1-geo' ); ?></p>
 		<?php else : ?>
-			<div class="row g-2 gx-2 row-cols-1 row-cols-md-2" style="margin-top:10px;">
+			<div class="row g-2 gx-2 row-cols-1 row-cols-md-2 paper-category-sections">
 				<?php foreach ( $sections as $section ) : ?>
 					<?php
 					$parent = get_category_by_slug( $section['slug'] );
@@ -71,7 +71,7 @@ electro_get_header( $header_style );
 					<div class="col d-flex flex-column">
 						<div class="custom-brand-with-category <?php echo esc_attr( $section['class'] ); ?>">
 							<div class="category-title"><h2 class="h4 me-2 mb-0 fw-bold cat-title"><?php echo esc_html( $section['title'] ); ?></h2></div>
-							<div class="category-image"><img class="img-fluid" style="width:100%;" src="<?php echo esc_url( get_theme_file_uri( $section['image'] ) ); ?>" alt="" loading="lazy"></div>
+							<div class="category-image"><img class="img-fluid" src="<?php echo esc_url( get_theme_file_uri( $section['image'] ) ); ?>" alt="" loading="lazy"></div>
 							<div class="py-4 position-relative col categories">
 								<?php if ( $section_error ) : ?>
 									<p><?php esc_html_e( 'This category is currently unavailable.', 'a1-geo' ); ?></p>

@@ -166,68 +166,7 @@ if ( $papers_category && ! $category_error && ! $invalid_category && ! $invalid_
 
 electro_get_header( $header_style );
 ?>
-<style>
-	.paper-explorer { padding: 24px 0 56px; }
-	body .paper-explorer.is-category-only { width: 100%; margin-left: auto; margin-right: auto; }
-	.paper-explorer-search { margin: 0 0 24px; padding: 24px; border: 1px solid #d9d4d4; background: #f6f4f4; }
-	.paper-explorer-search-controls { display: flex; align-items: stretch; }
-	.paper-explorer-search-controls:focus-within { outline: 2px solid #1d5089; outline-offset: 2px; }
-	.paper-explorer-search input[type="search"] { flex: 1 1 auto; min-width: 0; height: 44px; margin: 0; padding: 8px 12px; border: 1px solid #282624; border-radius: 0; background: #fff; color: #282624; }
-	.paper-explorer-search button { flex: 0 0 auto; height: 44px; margin: 0; padding: 8px 18px; border: 1px solid #282624; border-left: 0; border-radius: 0; background: transparent; color: #282624; }
-	.paper-explorer-search input[type="search"]:focus { border-color: #282624; }
-	.paper-explorer-search button { border-color: #282624 !important; }
-	.paper-explorer-search button:hover { background: #e8e4e4; }
-	.paper-explorer-search input:focus-visible, .paper-explorer-search button:focus-visible { outline: none; }
-	.paper-explorer-search button:focus-visible { box-shadow: inset 0 0 0 2px #1d5089; }
-	.paper-explorer-layout { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 28px; }
-	.paper-explorer-layout.is-category-only { grid-template-columns: minmax(0, 1fr); }
-	.paper-explorer-sidebar { border: 1px solid #d9dde2; background: #f7f9fa; padding: 18px; align-self: start; }
-	.paper-explorer-sidebar h2 { font-size: 1.15rem; margin: 0 0 12px; }
-	.paper-explorer-sidebar input[type="search"] { width: 100%; margin-bottom: 12px; }
-	.paper-explorer-categories { list-style: none; padding: 0; margin: 0; }
-	.paper-explorer-categories li { padding: 6px 0; }
-	.paper-explorer-categories label { display: flex; align-items: baseline; gap: 8px; margin: 0; }
-	.paper-explorer-toolbar { border-bottom: 1px solid #d9dde2; padding-bottom: 14px; }
-	.paper-explorer-toolbar form { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; }
-	.paper-explorer-toolbar-group { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-	.paper-explorer-toolbar-group select { border-radius: 0; }
-	.paper-explorer-total { margin: 18px 0 0; }
-	.paper-explorer-card { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; padding: 22px; margin-top: 18px; background: #fff; border: 1px solid #e3e5e8; border-radius: 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, .1); }
-	.paper-explorer-card h2 { font-size: 1.25rem; margin: 0 0 8px; }
-	.paper-explorer-card p { margin: 0 0 10px; }
-	.paper-explorer-content { display: flex; align-items: flex-start; gap: 16px; min-width: 0; }
-	.paper-explorer-content-text { flex: 1 1 auto; min-width: 0; }
-	.paper-explorer-pdf-link { color: #1d5089; font-style: italic; text-decoration: underline; }
-	.paper-explorer-meta { min-width: 0; padding-left: 20px; border-left: 1px solid #d9dde2; color: #555; font-size: .9rem; overflow-wrap: anywhere; }
-	.paper-explorer-meta-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 8px; row-gap: 8px; margin: 0 0 8px; }
-	.paper-explorer-meta-list dt, .paper-explorer-meta-list dd { margin: 0; font-weight: normal; min-width: 0; }
-	.paper-explorer-meta-list dd { font-weight: bold; }
-	.paper-explorer-views { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-	.paper-explorer-views-icon { width: 20px; height: 20px; vertical-align: middle; fill: none; stroke: currentColor; stroke-width: 1.8; }
-	.paper-explorer-meta-item { display: block; margin-bottom: 8px; }
-	.paper-explorer-image { display: block; flex: 0 0 135px; max-width: 30%; }
-	.paper-explorer-image img { width: 100%; height: auto; object-fit: contain; }
-	.paper-explorer-pagination { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center; gap: 8px; margin-top: 24px; text-align: center; }
-	.paper-explorer-pagination > a, .paper-explorer-pagination > [aria-disabled="true"] { color: #824a25; }
-	.paper-explorer-pagination > :first-child { text-align: left; }
-	.paper-explorer-pagination > :last-child { text-align: right; }
-	.paper-explorer-pagination [aria-current="page"] { font-weight: bold; }
-	.paper-explorer-back { margin: 18px 0; }
-	.paper-explorer-back a { color: #1d5089; text-decoration: underline; }
-	.paper-explorer-back a:hover, .paper-explorer-back a:focus-visible { color: #12355b; }
-	.paper-explorer-notice { padding: 14px; background: #f7f9fa; border: 1px solid #d9dde2; margin-top: 16px; }
-	.a1geo-paper-like-form { display: grid; gap: 8px; max-width: 420px; margin-top: 10px; }
-	.a1geo-paper-like-form p { font-size: .9rem; }
-	@media (min-width: 768px) and (max-width: 1100px) {
-		.paper-explorer-card { grid-template-columns: 1fr; gap: 16px; }
-		.paper-explorer-meta { padding: 16px 0 0; border-left: 0; border-top: 1px solid #d9dde2; }
-	}
-	@media (max-width: 767px) {
-		.paper-explorer-layout { grid-template-columns: 1fr; }
-		.paper-explorer-card { grid-template-columns: 1fr; gap: 16px; }
-		.paper-explorer-meta { padding: 16px 0 0; border-left: 0; border-top: 1px solid #d9dde2; }
-	}
-</style>
+
 
 <div id="primary" class="content-area paper-explorer<?php echo $category_only ? ' is-category-only' : ''; ?>">
 	<main id="main" class="site-main">

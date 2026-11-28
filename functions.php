@@ -381,6 +381,15 @@ function electro_custom_enqueue_styles()
 }
 
 wp_enqueue_style("a1geo-custom-style", get_stylesheet_directory_uri() . "/assets/css/a1geo.css", [], "1.9", false);
+function a1geo_enqueue_paper_styles() {
+	wp_enqueue_style(
+		'a1geo-papers-style',
+		get_stylesheet_directory_uri() . '/assets/css/a1geo-papers.css',
+		array( 'a1geo-custom-style', 'electro-style' ),
+		filemtime( get_stylesheet_directory() . '/assets/css/a1geo-papers.css' )
+	);
+}
+add_action( 'wp_enqueue_scripts', 'a1geo_enqueue_paper_styles', 1000 );
 
 if (!function_exists("electro_dokan_product_edit_add_specifications")) {
 	function electro_dokan_product_edit_add_specifications($post, $post_id)

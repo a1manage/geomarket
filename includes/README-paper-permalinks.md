@@ -9,6 +9,9 @@ The paper template is `single-paper.php`. Existing posts and pages assigned
 the former `single-papers.php` template remain supported; the editor displays
 that assignment as a legacy option.
 
+Paper page, explorer, category homepage, submission, and like-control styles
+are maintained in `assets/css/a1geo-papers.css`.
+
 WordPress registers and flushes the rewrite rule once when the theme code is
 deployed. Pretty permalinks must be enabled; with plain permalinks the existing
 query-string URLs are retained. Clear any WordPress, server or CDN page caches

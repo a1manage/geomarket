@@ -156,22 +156,7 @@ if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['a1geo_submit_paper'
 electro_get_header( $header_style );
 ?>
 
-<style>
-	.submit-paper-page { margin-top: -35px; padding-bottom: 56px; }
-	.submit-paper-shell { max-width: 920px; padding-top: 32px; }
-	.submit-paper-form { padding: 24px; border: 1px solid #d9dde2; background: #fff; }
-	.submit-paper-field { margin-bottom: 20px; }
-	.submit-paper-field label { display: block; margin-bottom: 7px; font-weight: 700; }
-	.submit-paper-field input[type="text"],
-	.submit-paper-field input[type="email"],
-	.submit-paper-field select,
-	.submit-paper-field textarea { width: 100%; max-width: 100%; }
-	.submit-paper-field textarea { min-height: 150px; }
-	.submit-paper-alert { margin-bottom: 18px; padding: 14px 18px; border: 1px solid #d9dde2; background: #fff; }
-	.submit-paper-alert-error { border-color: #b42318; color: #8c1d18; }
-	.submit-paper-submit { padding: 11px 20px; border: 0; background: #1d5089; color: #fff; cursor: pointer; }
-	@media (max-width: 575px) { .submit-paper-form { padding: 16px; } }
-</style>
+
 
 <div id="primary" class="content-area submit-paper-page">
 	<main id="main" class="site-main">

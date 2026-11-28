@@ -8,13 +8,7 @@
 remove_action( 'electro_content_top', 'electro_breadcrumb', 10 );
 get_header(); ?>
 
-<style>
-    .papers-template-container { padding-top: 20px; }
-    .a1geo-paper-like-form { display: grid; gap: 8px; max-width: 420px; margin: 12px 0; }
-    .a1geo-paper-like-form p { font-size: .9rem; }
-    .papers-template-container .paper-split-layout { margin-top: 0; }
-    .paper-pdf-viewer summary { color: #1d5089; font-style: italic; text-decoration: underline; }
-</style>
+
 
 <main id="primary" class="site-main papers-template-container">
     <?php while ( have_posts() ) : the_post(); ?>
@@ -84,13 +78,12 @@ get_header(); ?>
                                 data="<?php echo esc_url( $paper_document_url ); ?>"
                                 type="application/pdf"
                                 width="100%"
-                                height="800px"
-                                style="border: 1px solid #d9dde2; border-radius: 4px;">
-                                <div class="paper-pdf-fallback" style="padding: 20px; background: #f8f9fa; border: 1px solid #d9dde2; border-radius: 4px; text-align: center;">
-                                    <p style="margin-bottom: 10px; color: #333;">
+                                height="800px">
+                                <div class="paper-pdf-fallback">
+                                    <p>
                                         <?php esc_html_e( 'Your browser or device does not support viewing this PDF inline.', 'a1-geo' ); ?>
                                     </p>
-                                    <a href="<?php echo esc_url( $paper_document_url ); ?>" class="btn btn-primary" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 8px 16px; text-decoration: none; font-weight: bold;">
+                                    <a href="<?php echo esc_url( $paper_document_url ); ?>" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
                                         📥 <?php esc_html_e( 'Open or download the paper file directly', 'a1-geo' ); ?>
                                     </a>
                                 </div>
